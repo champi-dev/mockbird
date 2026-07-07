@@ -1,0 +1,7 @@
+django>=6.0,<7.0
+djangorestframework>=3.16
+djangorestframework-simplejwt>=5.5
+django-cors-headers>=4.9
+dj-database-url>=3.0
+psycopg[binary]>=3.2; sys_platform != "win32"
+gunicorn>=23.0; sys_platform != "win32"

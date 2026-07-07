@@ -1,0 +1,56 @@
+PROJECT PROPOSAL
+Mockbird
+A self-serve API mocking tool built on Vue 3 + Django
+Prepared by: DanielInternal · Open-source side project
+Summary
+Mockbird lets a developer define fake API endpoints through a web dashboard and instantly get a live, shareable URL that returns configurable JSON — with adjustable latency and error responses. It targets a daily friction point: frontend work blocked while waiting on a backend that isn’t ready yet. The same project doubles as a portfolio-grade, open-source demonstration of the Vue + Django stack that we can point prospective clients to as a real, running application rather than a static code sample.
+Problem & Opportunity
+Frontend developers routinely stall when the API they need to build against doesn’t exist yet, is unstable, or can’t easily reproduce edge cases such as slow responses, 500 errors, or malformed payloads. The usual workarounds — hardcoded fixtures, throwaway mock scripts, or paid SaaS tools — are either disposable or add an external dependency. Mockbird turns mock creation into a 30-second, no-code task and hands back a genuine HTTP endpoint, so frontend and backend can progress in parallel instead of one waiting on the other.
+Why This Is Worth Building
+Marketable skill demo. One coherent app that exercises the exact Vue + Django stack clients ask about — REST API design, dynamic request routing, state management, and cloud deployment — instead of scattered toy exercises.
+Live client artifact. Because it deploys to a public URL, it becomes a tangible “here’s something we built and run in production” link for sales conversations, not just a snippet in a repo.
+Open-source credibility. Published under the MIT license on GitHub, the code is publicly inspectable, shows clean structure and documentation habits, and can collect stars or forks that signal competence.
+Built-in validation. It solves a real internal pain, so coworkers have a genuine reason to try it. Their usage is low-cost proof the work is useful — not just a checkbox project.
+Low risk, low cost. Runs entirely on free hosting tiers, contains no proprietary code or client data, and is scoped to ship a working MVP in days, not months.
+Scope
+Version 1 ships the core loop and nothing more:
+Create / edit / delete mock endpoints (method, path, status code, JSON body, custom headers)
+Unique, stable live base URL per mock project
+Latency simulation (fixed delay in milliseconds)
+Error simulation (forced status codes / error rate)
+Incoming request log (method, path, timestamp, payload)
+Simple authentication (one account manages its own projects)
+
+Technical Stack
+Layer
+Choice
+Notes
+Frontend
+Vue 3 (Composition API) + Vite
+SPA dashboard; Pinia for state, Vue Router for navigation
+Backend
+Django + Django REST Framework
+Config REST API plus a catch-all view that serves the live mocks
+Database
+PostgreSQL
+Stores projects, endpoint definitions, and request logs
+Auth
+JWT (simplejwt)
+Stateless tokens, friendly to a decoupled SPA
+FE host
+Vercel
+Static build on a global CDN, auto-deploy from Git
+BE host
+Render
+Django web service + managed Postgres, auto-deploy from Git
+
+
+How It Works
+Two independently deployable pieces. The Vue dashboard on Vercel is a static SPA that talks to the Django API over HTTPS to manage mock definitions. Django on Render does double duty: it exposes the configuration REST API, and it serves a catch-all route — for example, GET /m/<project-slug>/users/42 — that looks up the matching endpoint in PostgreSQL, applies the configured delay and status code, and returns the stored JSON. Because every endpoint is persisted, each live mock URL is stable and can be shared with teammates or wired straight into a test suite.
+Mock request flow:  Client → Render (Django catch-all) → match path in Postgres → apply latency / error → return JSON.
+Effort & Timeline
+Estimated at two weeks, covering the full build — endpoint CRUD, live mock serving, authentication, request logging, and error simulation — plus a README, self-host docs, and a public demo instance.
+What Success Looks Like
+A handful of coworkers create a mock and use the live URL in real work.
+A deployed public instance plus a GitHub repo we can link in client conversations.
+A README clear enough that someone can self-host it in under ten minutes.
