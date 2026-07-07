@@ -10,6 +10,21 @@ defineEmits(['close'])
 
 const hasBody = props.endpoint.method !== 'GET'
 
+const paramNames = [...props.endpoint.path.matchAll(/\{(\w+)\}/g)].map(
+  (m) => m[1],
+)
+const paramValues = ref(
+  Object.fromEntries(paramNames.map((name) => [name, ''])),
+)
+
+const path = computed(() =>
+  paramNames.reduce(
+    (p, name) =>
+      p.replace(`{${name}}`, paramValues.value[name] || `{${name}}`),
+    props.endpoint.path,
+  ),
+)
+
 const query = ref(
   new URLSearchParams(
     props.endpoint.request_example?.query_params ?? {},
@@ -25,8 +40,12 @@ const error = ref('')
 
 const url = computed(() => {
   const qs = query.value.trim()
-  return `${props.baseUrl}${props.endpoint.path}${qs ? '?' + qs : ''}`
+  return `${props.baseUrl}${path.value}${qs ? '?' + qs : ''}`
 })
+
+const ready = computed(() =>
+  paramNames.every((name) => paramValues.value[name].trim()),
+)
 
 async function send() {
   busy.value = true
@@ -76,6 +95,23 @@ async function send() {
           </p>
           <code class="url mono">{{ url }}</code>
 
+          <div v-if="paramNames.length" class="params">
+            <div
+              v-for="name in paramNames"
+              :key="name"
+              class="field"
+            >
+              <label :for="`param-${name}`">
+                Path param: <code>{{ name }}</code>
+              </label>
+              <input
+                :id="`param-${name}`"
+                v-model="paramValues[name]"
+                :placeholder="`value for {${name}}`"
+              />
+            </div>
+          </div>
+
           <div class="field">
             <label for="qs">Query string</label>
             <input id="qs" v-model="query" placeholder="page=1&limit=10" />
@@ -90,7 +126,12 @@ async function send() {
             <button class="btn btn-ghost" @click="$emit('close')">
               Close
             </button>
-            <button class="btn btn-primary" :disabled="busy" @click="send">
+            <button
+              class="btn btn-primary"
+              :disabled="busy || !ready"
+              :title="ready ? '' : 'Fill in the path params first'"
+              @click="send"
+            >
               {{ busy ? 'Sending…' : '▶ Send request' }}
             </button>
           </div>
