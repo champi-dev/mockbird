@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useProjectsStore } from '../stores/projects'
 import { useEndpointsStore } from '../stores/endpoints'
 import { API_BASE } from '../api/client'
 import AiGenerateModal from '../components/AiGenerateModal.vue'
+import ImportOpenApiModal from '../components/ImportOpenApiModal.vue'
 import EndpointForm from '../components/EndpointForm.vue'
 import MockTester from '../components/MockTester.vue'
 import ResourcePanel from '../components/ResourcePanel.vue'
@@ -23,6 +24,11 @@ const showAi = ref(false)
 const aiBusy = ref(false)
 const aiModal = ref(null)
 const testing = ref(null)
+const showImport = ref(false)
+const importBusy = ref(false)
+const importModal = ref(null)
+const live = ref(false)
+let eventSource = null
 
 const project = computed(() =>
   projects.projects.find((p) => p.id === Number(props.id)),
@@ -68,14 +74,59 @@ async function generate(description) {
   }
 }
 
+async function importSpec(spec) {
+  importBusy.value = true
+  try {
+    await store.importOpenapi(props.id, spec)
+    showImport.value = false
+  } catch (e) {
+    importModal.value?.setError(
+      e.response?.data?.spec?.[0] || 'Import failed. Check the spec.',
+    )
+  } finally {
+    importBusy.value = false
+  }
+}
+
 function openLogs() {
   tab.value = 'logs'
   store.fetchLogs(props.id)
+  startStream()
 }
+
+function startStream() {
+  if (eventSource) return
+  const token = localStorage.getItem('access')
+  eventSource = new EventSource(
+    `${API_BASE}/api/projects/${props.id}/logs/stream/?token=${token}`,
+  )
+  eventSource.onopen = () => (live.value = true)
+  eventSource.onmessage = (event) => {
+    store.logs.unshift(JSON.parse(event.data))
+  }
+  eventSource.onerror = () => {
+    live.value = false
+    stopStream()
+  }
+}
+
+function stopStream() {
+  eventSource?.close()
+  eventSource = null
+  live.value = false
+}
+
+onUnmounted(stopStream)
 
 function openState() {
   tab.value = 'state'
+  stopStream()
   store.fetchResources(props.id)
+}
+
+function openEndpoints() {
+  tab.value = 'endpoints'
+  stopStream()
 }
 </script>
 
@@ -92,6 +143,16 @@ function openState() {
             </div>
           </div>
           <div class="row">
+            <router-link
+              class="btn btn-ghost"
+              :to="{ name: 'docs', params: { slug: project.slug } }"
+              target="_blank"
+            >
+              📄 Docs
+            </router-link>
+            <button class="btn btn-ghost" @click="showImport = true">
+              ⇪ Import spec
+            </button>
             <button class="btn btn-ghost" @click="showAi = true">
               ✨ Generate with AI
             </button>
@@ -107,7 +168,7 @@ function openState() {
         <nav class="tabs row">
           <button
             :class="['tab', { active: tab === 'endpoints' }]"
-            @click="tab = 'endpoints'"
+            @click="openEndpoints"
           >
             Endpoints
           </button>
@@ -156,6 +217,7 @@ function openState() {
         <LogsTable
           v-else
           :logs="store.logs"
+          :live="live"
           @refresh="store.fetchLogs(id)"
         />
 
@@ -164,6 +226,14 @@ function openState() {
           :endpoint="testing"
           :base-url="baseUrl"
           @close="testing = null"
+        />
+
+        <ImportOpenApiModal
+          v-if="showImport"
+          ref="importModal"
+          :busy="importBusy"
+          @import="importSpec"
+          @close="showImport = false"
         />
 
         <AiGenerateModal

@@ -7,8 +7,11 @@ from rest_framework_simplejwt.views import (
 )
 
 from mocks.mock_server import MockServerView
+from mocks.streaming import log_stream
 from mocks.views import (
     AiGenerateView,
+    ImportOpenApiView,
+    PublicDocsView,
     EndpointViewSet,
     ProjectViewSet,
     RegisterView,
@@ -57,9 +60,18 @@ urlpatterns = [
         AiGenerateView.as_view(),
     ),
     path(
+        "api/projects/<int:project_pk>/import-openapi/",
+        ImportOpenApiView.as_view(),
+    ),
+    path(
         "api/projects/<int:project_pk>/logs/",
         RequestLogListView.as_view(),
     ),
+    path(
+        "api/projects/<int:project_pk>/logs/stream/",
+        log_stream,
+    ),
+    path("api/docs/<slug:slug>/", PublicDocsView.as_view()),
     path("m/<slug:slug>/", MockServerView.as_view()),
     path("m/<slug:slug>/<path:mock_path>", MockServerView.as_view()),
 ]

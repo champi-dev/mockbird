@@ -4,6 +4,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .ai import AiUnavailable, generate_endpoints
+from .openapi_import import parse_openapi
 from .models import Endpoint, Project, RequestLog, Resource
 from .serializers import (
     EndpointSerializer,
@@ -107,21 +108,71 @@ class AiGenerateView(OwnedProjectMixin, APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        existing = {
-            (e.method, e.path)
-            for e in project.endpoints.only("method", "path")
-        }
-        created = []
-        for definition in definitions:
-            if (definition["method"], definition["path"]) in existing:
-                continue
-            endpoint = Endpoint.objects.create(
-                project=project, **definition
-            )
-            seed_resource(endpoint)
-            created.append(endpoint)
+        created = create_endpoints(project, definitions)
         serializer = EndpointSerializer(created, many=True)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+def create_endpoints(project, definitions):
+    """Bulk-create endpoint definitions, skipping duplicate routes."""
+    existing = {
+        (e.method, e.path)
+        for e in project.endpoints.only("method", "path")
+    }
+    created = []
+    for definition in definitions:
+        if (definition["method"], definition["path"]) in existing:
+            continue
+        endpoint = Endpoint.objects.create(project=project, **definition)
+        seed_resource(endpoint)
+        created.append(endpoint)
+    return created
+
+
+class ImportOpenApiView(OwnedProjectMixin, APIView):
+    """Create endpoints from an OpenAPI 3.x spec (YAML or JSON)."""
+
+    def post(self, request, project_pk):
+        project = self.project
+        spec = str(request.data.get("spec", ""))
+        if not spec.strip():
+            return Response(
+                {"spec": ["This field is required."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            definitions = parse_openapi(spec)
+        except ValueError as exc:
+            return Response(
+                {"spec": [str(exc)]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        created = create_endpoints(project, definitions)
+        serializer = EndpointSerializer(created, many=True)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class PublicDocsView(APIView):
+    """Read-only, unauthenticated docs for a project's mock API.
+
+    Exposes only what a consumer needs: endpoint shapes and
+    examples. Never logs, owner info, or resource state.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, slug):
+        project = generics.get_object_or_404(Project, slug=slug)
+        endpoints = EndpointSerializer(
+            project.endpoints.all(), many=True
+        ).data
+        return Response(
+            {
+                "name": project.name,
+                "slug": project.slug,
+                "endpoints": endpoints,
+            }
+        )
 
 
 class RequestLogListView(OwnedProjectMixin, generics.ListAPIView):

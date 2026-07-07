@@ -1,6 +1,7 @@
 <script setup>
 defineProps({
   logs: { type: Array, required: true },
+  live: { type: Boolean, default: false },
 })
 
 defineEmits(['refresh'])
@@ -13,7 +14,12 @@ function fmt(iso) {
 <template>
   <section class="card">
     <div class="spread">
-      <h2>Incoming requests</h2>
+      <h2>
+        Incoming requests
+        <span v-if="live" class="live">
+          <span class="dot" /> live
+        </span>
+      </h2>
       <button class="btn btn-ghost" @click="$emit('refresh')">
         ↻ Refresh
       </button>
@@ -31,7 +37,7 @@ function fmt(iso) {
           <th>Matched</th>
         </tr>
       </thead>
-      <tbody>
+      <transition-group tag="tbody" name="list">
         <tr v-for="log in logs" :key="log.id">
           <td class="muted">{{ fmt(log.created_at) }}</td>
           <td>
@@ -43,7 +49,7 @@ function fmt(iso) {
           <td>{{ log.status_code }}</td>
           <td>{{ log.matched ? '✓' : '—' }}</td>
         </tr>
-      </tbody>
+      </transition-group>
     </table>
   </section>
 </template>
@@ -51,6 +57,40 @@ function fmt(iso) {
 <style scoped>
 h2 {
   font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--success);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
 }
 
 table {

@@ -15,6 +15,13 @@ const routes = [
     meta: { public: true },
   },
   {
+    path: '/docs/:slug',
+    name: 'docs',
+    component: () => import('../views/DocsView.vue'),
+    props: true,
+    meta: { public: true, standalone: true },
+  },
+  {
     path: '/',
     name: 'dashboard',
     component: () => import('../views/DashboardView.vue'),
@@ -37,7 +44,7 @@ router.beforeEach((to) => {
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: 'login' }
   }
-  if (to.meta.public && auth.isAuthenticated) {
+  if (to.meta.public && !to.meta.standalone && auth.isAuthenticated) {
     return { name: 'dashboard' }
   }
 })

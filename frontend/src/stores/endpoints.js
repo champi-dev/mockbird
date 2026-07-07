@@ -60,6 +60,15 @@ export const useEndpointsStore = defineStore('endpoints', {
       this.logs = data
     },
 
+    async importOpenapi(projectId, spec) {
+      const { data } = await client.post(
+        `/projects/${projectId}/import-openapi/`,
+        { spec },
+      )
+      this.endpoints.push(...data)
+      return data
+    },
+
     async fetchResources(projectId) {
       const { data } = await client.get(
         `/projects/${projectId}/resources/`,

@@ -79,6 +79,17 @@ feature returns 503 and everything else works normally.
   reads live state. Seeded from the list endpoint's body; inspect
   and reset it in the dashboard's State tab.
 
+## More
+
+- **OpenAPI import:** paste or upload a Swagger/OpenAPI 3.x spec
+  (YAML or JSON) and every operation becomes a mock endpoint,
+  examples included.
+- **Live request log:** the log tab streams incoming requests in
+  real time over SSE.
+- **Public docs:** every project gets a shareable, no-login API
+  reference at `/docs/<slug>`.
+- **AI generation:** describe the API in plain English (see above).
+
 ## How the mock server works
 
 ```

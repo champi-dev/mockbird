@@ -497,6 +497,55 @@ normalize is also data modeling.
 
 ---
 
+## Chapter 12 — Growing the product: import, live logs, public docs
+
+Three features added in one sweep, each reusing machinery from
+earlier chapters — a sign the architecture is paying rent.
+
+**OpenAPI import (`mocks/openapi_import.py`).** Teams that would
+adopt Mockbird usually already *have* an API spec. `parse_openapi()`
+walks a pasted/uploaded Swagger 3.x document (YAML or JSON — YAML is
+a superset, so one `yaml.safe_load` handles both) and emits the same
+definition dicts the AI produces, so `create_endpoints()` — the
+shared bulk-create-with-dedup helper extracted from the AI view —
+serves both. Happy accident worth noticing: OpenAPI's path
+templating (`/pets/{petId}`) is *identical* to our Chapter 11
+`{param}` syntax, so paths pass through untouched. Response bodies
+prefer explicit `example`s; otherwise `_example_from_schema()`
+synthesizes one from the JSON schema (object → recurse properties,
+array → one item, scalars → type defaults, depth-capped).
+
+**Live request log via SSE (`mocks/streaming.py`).** Server-Sent
+Events is the right tool when data flows one way (server → browser):
+it's plain HTTP, auto-reconnects, and needs no websocket
+infrastructure. Two implementation realities dominate the file:
+
+1. `EventSource` cannot set an `Authorization` header, so the JWT
+   rides in `?token=` and is validated manually with
+   `JWTAuthentication` — same tokens, different transport.
+2. A streaming response holds a server worker for its lifetime, so
+   the generator polls the DB every 2 s and hard-stops after 5
+   minutes (the browser transparently reconnects). Testable because
+   the generator `iter_log_events()` is a plain function — the test
+   patches `time.sleep` and pulls two frames off it.
+
+The frontend opens the stream when the log tab is active (pulsing
+"live" dot), prepends events through the existing
+`<transition-group>`, and closes it on tab switch or unmount.
+
+**Public docs (`PublicDocsView` + `DocsView.vue`).** One
+`AllowAny` endpoint keyed by the unguessable slug returns name +
+endpoint definitions — nothing else (the test asserts no owner/log
+leakage; capability-URL security, same idea as the mock URL itself).
+The SPA renders it at `/docs/<slug>` as a clean API-reference page:
+method badges, descriptions, request examples, response/seed JSON.
+A router nuance: the guard bounced *authenticated* users off public
+routes (fine for login/register, wrong for docs), fixed with a
+`standalone` meta flag — guards accrete special cases; keep them
+declarative.
+
+---
+
 **Final Feynman test:** close this file and explain, out loud, what
 happens end-to-end when `GET /m/demo-shop-x1/users/42` arrives — from
 TCP hitting gunicorn to JSON leaving and a log row appearing. If you
