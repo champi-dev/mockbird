@@ -1,5 +1,9 @@
-from rest_framework import generics, permissions, viewsets
+from rest_framework import generics, permissions, status, viewsets
+from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
+from .ai import AiUnavailable, generate_endpoints
 from .models import Endpoint, Project, RequestLog
 from .serializers import (
     EndpointSerializer,
@@ -43,6 +47,43 @@ class EndpointViewSet(OwnedProjectMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(project=self.project)
+
+
+class AiGenerateView(OwnedProjectMixin, APIView):
+    """Create endpoints in a project from a natural-language
+    description, via the AI helper. Rate-limited per user."""
+
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "ai"
+
+    def post(self, request, project_pk):
+        project = self.project
+        description = str(request.data.get("description", "")).strip()
+        if not description:
+            return Response(
+                {"description": ["This field is required."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            definitions = generate_endpoints(description)
+        except AiUnavailable as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        existing = {
+            (e.method, e.path)
+            for e in project.endpoints.only("method", "path")
+        }
+        created = [
+            Endpoint.objects.create(project=project, **definition)
+            for definition in definitions
+            if (definition["method"], definition["path"]) not in existing
+        ]
+        serializer = EndpointSerializer(created, many=True)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class RequestLogListView(OwnedProjectMixin, generics.ListAPIView):

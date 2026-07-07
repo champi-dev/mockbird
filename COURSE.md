@@ -373,6 +373,53 @@ of Chapter 2.
 4. **Team sharing** — a `Membership` model; the ownership queryset
    from Chapter 4 is the single place to widen.
 
+---
+
+## Chapter 10 — A touch of AI: describe an API, get its mock
+
+The newest feature: on a project page, "✨ Generate with AI" takes a
+plain-English description ("a todo API with list, detail, create,
+delete…") and creates real endpoints. Three files carry it.
+
+**`mocks/ai.py` — the boundary with the model.** We call OpenAI's
+`gpt-4o-mini` (cheap, fast) over plain HTTP with
+`response_format: {"type": "json_object"}` — JSON mode — and a system
+prompt that pins the exact output shape, limits methods, and demands
+concrete paths (no `{id}` placeholders, because our matcher is
+exact-match; see Chapter 5).
+
+The crucial discipline: **never trust model output.**
+`parse_endpoints()` treats the LLM like any untrusted client — it
+drops unknown methods, normalizes paths, clamps `status_code` to
+100–599 and `delay_ms` to the same 30 s cap the mock server enforces,
+and caps the list at 10. Any failure (network, bad JSON, missing key)
+collapses into one domain exception, `AiUnavailable`, which the view
+maps to a 503. The rest of the codebase never learns OpenAI exists.
+
+**`AiGenerateView`** reuses `OwnedProjectMixin` (tenant isolation for
+free, again), skips definitions that would collide with existing
+`(method, path)` routes, bulk-creates the rest, and returns them
+through the same `EndpointSerializer` as manual creation.
+
+**Rate limiting** is DRF's `ScopedRateThrottle` with scope `"ai"` —
+one settings line (`AI_THROTTLE_RATE`, default `10/hour` per user)
+and one attribute on the view. Only this endpoint is throttled;
+normal CRUD stays unlimited. Over the limit → 429, which the modal
+translates to "Rate limit reached".
+
+**Feynman moment:** the AI here is a *form-filler, not an oracle*.
+Nothing it produces is executed or trusted — it just pre-populates
+the same rows a human would have typed into the endpoint form, and
+every value passes through the same validation. That's the safe
+pattern for sprinkling LLMs into a CRUD app: let the model draft,
+let your existing pipeline decide.
+
+Testing note: all seven tests in `test_ai.py` patch
+`generate_endpoints` (or feed `parse_endpoints` directly) — the suite
+never touches the network and runs without an API key.
+
+---
+
 **Final Feynman test:** close this file and explain, out loud, what
 happens end-to-end when `GET /m/demo-shop-x1/users/42` arrives — from
 TCP hitting gunicorn to JSON leaving and a log row appearing. If you

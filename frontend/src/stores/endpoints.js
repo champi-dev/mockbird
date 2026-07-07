@@ -45,6 +45,15 @@ export const useEndpointsStore = defineStore('endpoints', {
       this.endpoints = this.endpoints.filter((e) => e.id !== id)
     },
 
+    async generateEndpoints(projectId, description) {
+      const { data } = await client.post(
+        `/projects/${projectId}/generate/`,
+        { description },
+      )
+      this.endpoints.push(...data)
+      return data
+    },
+
     async fetchLogs(projectId) {
       const { data } = await client.get(`/projects/${projectId}/logs/`)
       this.logs = data

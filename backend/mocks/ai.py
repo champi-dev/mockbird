@@ -1,0 +1,97 @@
+"""Turn a natural-language API description into endpoint definitions
+using OpenAI (gpt-4o-mini, JSON mode)."""
+
+import json
+
+import requests
+from django.conf import settings
+
+from .models import HTTP_METHODS
+
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+MODEL = "gpt-4o-mini"
+VALID_METHODS = {m for m, _ in HTTP_METHODS}
+
+SYSTEM_PROMPT = """\
+You design mock REST APIs. Given a description of an API, output the
+endpoints it should have, with realistic example JSON responses.
+
+Reply ONLY with JSON of this shape:
+{"endpoints": [
+  {"method": "GET", "path": "/things",
+   "status_code": 200,
+   "response_body": <realistic example JSON>,
+   "headers": {}, "delay_ms": 0}
+]}
+
+Rules: 3-8 endpoints; methods limited to GET/POST/PUT/PATCH/DELETE;
+paths are concrete (use example ids like /things/1, no {id}
+placeholders); response bodies contain 2-3 realistic sample records
+for list endpoints."""
+
+
+class AiUnavailable(Exception):
+    """AI generation cannot be performed right now."""
+
+
+def generate_endpoints(description: str) -> list[dict]:
+    """Call OpenAI and return a sanitized list of endpoint dicts."""
+    api_key = getattr(settings, "OPENAI_API_KEY", "")
+    if not api_key:
+        raise AiUnavailable("OPENAI_API_KEY is not configured.")
+
+    try:
+        resp = requests.post(
+            OPENAI_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": MODEL,
+                "temperature": 0.4,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": description[:2000]},
+                ],
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        payload = json.loads(content)
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        raise AiUnavailable(f"AI request failed: {exc}") from exc
+
+    return parse_endpoints(payload)
+
+
+def parse_endpoints(payload: dict) -> list[dict]:
+    """Validate and clamp model output; drop anything malformed."""
+    result = []
+    for item in payload.get("endpoints", []):
+        if not isinstance(item, dict):
+            continue
+        method = str(item.get("method", "")).upper()
+        path = str(item.get("path", "")).strip()
+        if method not in VALID_METHODS or not path:
+            continue
+        if not path.startswith("/"):
+            path = "/" + path
+        result.append(
+            {
+                "method": method,
+                "path": path[:255],
+                "status_code": _clamp(item.get("status_code"), 100, 599, 200),
+                "response_body": item.get("response_body", {}),
+                "headers": item.get("headers") or {},
+                "delay_ms": _clamp(item.get("delay_ms"), 0, 30000, 0),
+            }
+        )
+    return result[:10]
+
+
+def _clamp(value, low, high, default):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+    return default if not low <= value <= high else value

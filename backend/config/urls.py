@@ -8,6 +8,7 @@ from rest_framework_simplejwt.views import (
 
 from mocks.mock_server import MockServerView
 from mocks.views import (
+    AiGenerateView,
     EndpointViewSet,
     ProjectViewSet,
     RegisterView,
@@ -40,6 +41,10 @@ urlpatterns = [
     path(
         "api/projects/<int:project_pk>/endpoints/<int:pk>/",
         endpoint_detail,
+    ),
+    path(
+        "api/projects/<int:project_pk>/generate/",
+        AiGenerateView.as_view(),
     ),
     path(
         "api/projects/<int:project_pk>/logs/",

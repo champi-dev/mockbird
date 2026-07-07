@@ -50,6 +50,16 @@ cd frontend && npm test                             # 8 tests
 | `ALLOWED_HOSTS` | `*` | Comma-separated hosts |
 | `CORS_ORIGINS` | — | Comma-separated frontend origins |
 | `VITE_API_BASE` | `http://localhost:8000` | Backend URL for the SPA |
+| `OPENAI_API_KEY` | — | Enables ✨ AI endpoint generation |
+| `AI_THROTTLE_RATE` | `10/hour` | Per-user AI rate limit |
+
+## AI generation (optional)
+
+Copy `backend/.env.example` to `backend/.env` and set your
+`OPENAI_API_KEY`. The "✨ Generate with AI" button on a project then
+turns a plain-English description into ready-made mock endpoints
+(gpt-4o-mini, JSON mode, per-user rate limit). Without a key the
+feature returns 503 and everything else works normally.
 
 ## Deploy
 

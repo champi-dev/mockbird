@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useProjectsStore } from '../stores/projects'
 import { useEndpointsStore } from '../stores/endpoints'
 import { API_BASE } from '../api/client'
+import AiGenerateModal from '../components/AiGenerateModal.vue'
 import EndpointForm from '../components/EndpointForm.vue'
 import EndpointRow from '../components/EndpointRow.vue'
 import LogsTable from '../components/LogsTable.vue'
@@ -16,6 +17,9 @@ const store = useEndpointsStore()
 const tab = ref('endpoints')
 const editing = ref(null)
 const showForm = ref(false)
+const showAi = ref(false)
+const aiBusy = ref(false)
+const aiModal = ref(null)
 
 const project = computed(() =>
   projects.projects.find((p) => p.id === Number(props.id)),
@@ -44,6 +48,23 @@ async function save(payload) {
   editing.value = null
 }
 
+async function generate(description) {
+  aiBusy.value = true
+  try {
+    await store.generateEndpoints(props.id, description)
+    showAi.value = false
+  } catch (e) {
+    const status = e.response?.status
+    aiModal.value?.setError(
+      status === 429
+        ? 'Rate limit reached — try again later.'
+        : e.response?.data?.detail || 'Generation failed. Try again.',
+    )
+  } finally {
+    aiBusy.value = false
+  }
+}
+
 function openLogs() {
   tab.value = 'logs'
   store.fetchLogs(props.id)
@@ -62,12 +83,17 @@ function openLogs() {
               <CopyButton :text="baseUrl" />
             </div>
           </div>
-          <button
-            class="btn btn-primary"
-            @click="((editing = null), (showForm = true))"
-          >
-            + New endpoint
-          </button>
+          <div class="row">
+            <button class="btn btn-ghost" @click="showAi = true">
+              ✨ Generate with AI
+            </button>
+            <button
+              class="btn btn-primary"
+              @click="((editing = null), (showForm = true))"
+            >
+              + New endpoint
+            </button>
+          </div>
         </div>
 
         <nav class="tabs row">
@@ -109,6 +135,14 @@ function openLogs() {
           v-else
           :logs="store.logs"
           @refresh="store.fetchLogs(id)"
+        />
+
+        <AiGenerateModal
+          v-if="showAi"
+          ref="aiModal"
+          :busy="aiBusy"
+          @generate="generate"
+          @close="showAi = false"
         />
 
         <EndpointForm

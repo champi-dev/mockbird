@@ -8,6 +8,16 @@ import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load simple KEY=value pairs from backend/.env if present (dev
+# convenience; real deployments set env vars directly).
+_env_file = BASE_DIR / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
+
 SECRET_KEY = os.environ.get(
     "SECRET_KEY",
     "django-insecure-dev-only-key-change-in-production",
@@ -88,7 +98,12 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
+    "DEFAULT_THROTTLE_RATES": {
+        "ai": os.environ.get("AI_THROTTLE_RATE", "10/hour"),
+    },
 }
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=8),
