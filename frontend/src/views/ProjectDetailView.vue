@@ -5,6 +5,7 @@ import { useEndpointsStore } from '../stores/endpoints'
 import { API_BASE } from '../api/client'
 import AiGenerateModal from '../components/AiGenerateModal.vue'
 import EndpointForm from '../components/EndpointForm.vue'
+import MockTester from '../components/MockTester.vue'
 import EndpointRow from '../components/EndpointRow.vue'
 import LogsTable from '../components/LogsTable.vue'
 import CopyButton from '../components/CopyButton.vue'
@@ -20,6 +21,7 @@ const showForm = ref(false)
 const showAi = ref(false)
 const aiBusy = ref(false)
 const aiModal = ref(null)
+const testing = ref(null)
 
 const project = computed(() =>
   projects.projects.find((p) => p.id === Number(props.id)),
@@ -127,6 +129,7 @@ function openLogs() {
               :base-url="baseUrl"
               @edit="edit(ep)"
               @delete="store.deleteEndpoint(id, ep.id)"
+              @test="testing = ep"
             />
           </transition-group>
         </section>
@@ -135,6 +138,13 @@ function openLogs() {
           v-else
           :logs="store.logs"
           @refresh="store.fetchLogs(id)"
+        />
+
+        <MockTester
+          v-if="testing"
+          :endpoint="testing"
+          :base-url="baseUrl"
+          @close="testing = null"
         />
 
         <AiGenerateModal

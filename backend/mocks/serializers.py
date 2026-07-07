@@ -26,6 +26,8 @@ class EndpointSerializer(serializers.ModelSerializer):
             "id",
             "method",
             "path",
+            "description",
+            "request_example",
             "status_code",
             "response_body",
             "headers",

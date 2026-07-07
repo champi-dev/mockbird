@@ -414,7 +414,30 @@ every value passes through the same validation. That's the safe
 pattern for sprinkling LLMs into a CRUD app: let the model draft,
 let your existing pipeline decide.
 
-Testing note: all seven tests in `test_ai.py` patch
+**Iteration after real use (v2 of the feature).** First user
+feedback: generated endpoints felt unrelated ("just static rows"),
+and nothing told the caller what query params or body to send. Three
+fixes, worth studying because they show how feedback maps to layers:
+
+1. *Coherence* was a **prompt** problem: the system prompt now forces
+   the model to invent one small dataset first and derive every
+   endpoint from it — so the list's ids match the detail routes and
+   an order's total actually equals price × quantity.
+2. *Missing input docs* was a **schema** problem: `Endpoint` gained
+   `description` and `request_example` (JSONField documenting
+   expected `query_params`/`body`), filled by the AI, editable by
+   hand, shown when you expand an endpoint row.
+3. *"How do I try it?"* was a **UX** problem: a ▶ Test button opens
+   `MockTester.vue`, which fires a real `fetch` at the live mock URL
+   (pre-filled from `request_example`), and shows status, latency,
+   and pretty-printed body — and, since it's a genuine request, it
+   also lands in the request log.
+
+Responses are still intentionally static — a mock's job is to be
+predictable. True dynamism (path params, stateful CRUD, echoing
+input) is the Chapter 9 extension list.
+
+Testing note: all tests in `test_ai.py` patch
 `generate_endpoints` (or feed `parse_endpoints` directly) — the suite
 never touches the network and runs without an API key.
 

@@ -29,6 +29,30 @@ class ParseEndpointsTests(APITestCase):
         self.assertEqual(len(parsed), 2)
         self.assertEqual(parsed[0]["method"], "GET")
 
+    def test_passes_description_and_request_example(self):
+        parsed = parse_endpoints(
+            {
+                "endpoints": [
+                    {
+                        "method": "POST",
+                        "path": "/todos",
+                        "description": "Create a todo",
+                        "request_example": {"body": {"title": "x"}},
+                    },
+                    {
+                        "method": "GET",
+                        "path": "/todos",
+                        "request_example": "not a dict",
+                    },
+                ]
+            }
+        )
+        self.assertEqual(parsed[0]["description"], "Create a todo")
+        self.assertEqual(
+            parsed[0]["request_example"], {"body": {"title": "x"}}
+        )
+        self.assertEqual(parsed[1]["request_example"], {})
+
     def test_rejects_bad_method_and_clamps_fields(self):
         parsed = parse_endpoints(
             {

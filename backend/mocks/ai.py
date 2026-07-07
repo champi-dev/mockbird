@@ -16,18 +16,30 @@ SYSTEM_PROMPT = """\
 You design mock REST APIs. Given a description of an API, output the
 endpoints it should have, with realistic example JSON responses.
 
+FIRST invent one small consistent dataset for the domain (e.g. 3
+products with ids 1-3), THEN derive every endpoint from that SAME
+dataset so endpoints relate to each other: the list endpoint returns
+exactly those records, detail endpoints like /products/1 return the
+matching record, a POST returns a plausible newly-created record
+(next id), DELETE returns 204 or a confirmation referencing a real
+id. Never use unrelated placeholder data.
+
 Reply ONLY with JSON of this shape:
 {"endpoints": [
   {"method": "GET", "path": "/things",
+   "description": "one line: what this does and expected inputs",
+   "request_example": {"query_params": {"page": 1},
+                       "body": {"name": "..."}},
    "status_code": 200,
-   "response_body": <realistic example JSON>,
+   "response_body": <realistic example JSON from the dataset>,
    "headers": {}, "delay_ms": 0}
 ]}
 
 Rules: 3-8 endpoints; methods limited to GET/POST/PUT/PATCH/DELETE;
-paths are concrete (use example ids like /things/1, no {id}
-placeholders); response bodies contain 2-3 realistic sample records
-for list endpoints."""
+paths are concrete (use real ids from your dataset like /things/1,
+no {id} placeholders); request_example documents the query params
+and/or body a caller should send (omit keys that don't apply, use
+{} when none); descriptions are short and concrete."""
 
 
 class AiUnavailable(Exception):
@@ -80,6 +92,12 @@ def parse_endpoints(payload: dict) -> list[dict]:
             {
                 "method": method,
                 "path": path[:255],
+                "description": str(item.get("description", ""))[:255],
+                "request_example": (
+                    item.get("request_example")
+                    if isinstance(item.get("request_example"), dict)
+                    else {}
+                ),
                 "status_code": _clamp(item.get("status_code"), 100, 599, 200),
                 "response_body": item.get("response_body", {}),
                 "headers": item.get("headers") or {},

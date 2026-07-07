@@ -50,6 +50,12 @@ class Endpoint(models.Model):
     )
     method = models.CharField(max_length=7, choices=HTTP_METHODS)
     path = models.CharField(max_length=255)
+    description = models.CharField(max_length=255, blank=True, default="")
+    request_example = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Documents expected query params / request body",
+    )
     status_code = models.PositiveSmallIntegerField(default=200)
     response_body = models.JSONField(default=dict, blank=True)
     headers = models.JSONField(default=dict, blank=True)

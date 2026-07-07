@@ -10,6 +10,7 @@ const emit = defineEmits(['save', 'close'])
 const form = reactive({
   method: props.endpoint?.method ?? 'GET',
   path: props.endpoint?.path ?? '/',
+  description: props.endpoint?.description ?? '',
   status_code: props.endpoint?.status_code ?? 200,
   delay_ms: props.endpoint?.delay_ms ?? 0,
   error_rate: props.endpoint?.error_rate ?? 0,
@@ -66,6 +67,12 @@ function submit() {
               <input id="path" v-model="form.path" required
                 placeholder="/users/42" />
             </div>
+          </div>
+
+          <div class="field">
+            <label for="desc">Description (optional)</label>
+            <input id="desc" v-model="form.description"
+              placeholder="What this endpoint does, expected inputs" />
           </div>
 
           <div class="grid-2">
