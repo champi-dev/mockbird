@@ -24,22 +24,33 @@ matching record, a POST returns a plausible newly-created record
 (next id), DELETE returns 204 or a confirmation referencing a real
 id. Never use unrelated placeholder data.
 
+Prefer STATEFUL endpoints for the main resources: set
+"mode": "stateful" and "resource": "<plural-resource-name>", use
+"{id}" as the path parameter (e.g. /things/{id}), and give the list
+endpoint (GET collection) the dataset as its response_body — it seeds
+the live state. Stateful endpoints then really work: POST inserts,
+PATCH merges, DELETE removes, GET reads current state. Use
+"mode": "static" only for routes that aren't collection CRUD (e.g.
+/health, reports); static paths may also use {id} and reference it
+in the body as "{{params.id}}".
+
 Reply ONLY with JSON of this shape:
 {"endpoints": [
   {"method": "GET", "path": "/things",
+   "mode": "stateful", "resource": "things",
    "description": "one line: what this does and expected inputs",
    "request_example": {"query_params": {"page": 1},
                        "body": {"name": "..."}},
    "status_code": 200,
-   "response_body": <realistic example JSON from the dataset>,
+   "response_body": <the dataset / realistic example JSON>,
    "headers": {}, "delay_ms": 0}
 ]}
 
 Rules: 3-8 endpoints; methods limited to GET/POST/PUT/PATCH/DELETE;
-paths are concrete (use real ids from your dataset like /things/1,
-no {id} placeholders); request_example documents the query params
-and/or body a caller should send (omit keys that don't apply, use
-{} when none); descriptions are short and concrete."""
+every dict in the dataset has an integer "id"; request_example
+documents the query params and/or body a caller should send (omit
+keys that don't apply, use {} when none); descriptions are short
+and concrete."""
 
 
 class AiUnavailable(Exception):
@@ -92,6 +103,13 @@ def parse_endpoints(payload: dict) -> list[dict]:
             {
                 "method": method,
                 "path": path[:255],
+                "mode": (
+                    "stateful"
+                    if item.get("mode") == "stateful"
+                    and item.get("resource")
+                    else "static"
+                ),
+                "resource": str(item.get("resource", ""))[:64],
                 "description": str(item.get("description", ""))[:255],
                 "request_example": (
                     item.get("request_example")

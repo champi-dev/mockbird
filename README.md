@@ -70,6 +70,15 @@ feature returns 503 and everything else works normally.
   start `gunicorn config.wsgi`, attach managed Postgres
   (`DATABASE_URL` is injected automatically).
 
+## Dynamic mocks
+
+- Paths support `{param}` segments (`/products/{id}`); static bodies
+  can reference captures via `"{{params.id}}"`.
+- **Stateful mode:** point endpoints at a named resource and CRUD
+  actually works — POST inserts, PATCH merges, DELETE removes, GET
+  reads live state. Seeded from the list endpoint's body; inspect
+  and reset it in the dashboard's State tab.
+
 ## How the mock server works
 
 ```

@@ -433,13 +433,67 @@ fixes, worth studying because they show how feedback maps to layers:
    and pretty-printed body — and, since it's a genuine request, it
    also lands in the request log.
 
-Responses are still intentionally static — a mock's job is to be
-predictable. True dynamism (path params, stateful CRUD, echoing
-input) is the Chapter 9 extension list.
-
 Testing note: all tests in `test_ai.py` patch
 `generate_endpoints` (or feed `parse_endpoints` directly) — the suite
 never touches the network and runs without an API key.
+
+---
+
+## Chapter 11 — Dynamic mocks: path params and stateful CRUD
+
+The extension Chapter 5 predicted. Two upgrades turn Mockbird from a
+tape recorder into something that behaves like a real API.
+
+**Path parameters (`mocks/matching.py`).** Paths may now contain
+`{param}` segments (`/products/{id}`). `find_endpoint()` tries an
+exact match first (cheap, and specific routes like
+`/products/special` must beat patterns), then compares
+segment-by-segment against pattern routes, capturing params. Static
+endpoints can splice captures into their body with
+`"{{params.id}}"` — `render_template()` walks the JSON recursively
+and substitutes.
+
+**Stateful CRUD (`mocks/stateful.py` + the `Resource` model).**
+
+*Feynman moment:* the old mock server was a tape recorder — ask,
+and it plays the same tape. A stateful mock is a whiteboard with an
+actual list on it: POST writes a new line, DELETE erases one, and
+the next GET reads whatever the whiteboard says *now*.
+
+The whiteboard is `Resource`: a named JSON collection per project
+with two copies of the data — `initial_items` (the seed, written
+once) and `items` (live state, mutated by traffic). An endpoint
+with `mode="stateful"` and `resource="products"` no longer returns
+its stored body; instead `handle_stateful()` derives the operation
+from shape alone:
+
+| request | operation |
+| --- | --- |
+| GET, no param | return all `items` |
+| GET `/…/{id}` | return matching item or 404 |
+| POST | insert body with next integer id → 201 |
+| PUT / PATCH `/…/{id}` | replace / merge → 200 (404 if missing) |
+| DELETE `/…/{id}` | remove → 204 (404 if missing) |
+
+No per-operation configuration — five endpoint rows sharing one
+resource name give you a working, persistent, shareable fake API.
+Delay and error simulation still apply on top (the dispatch order
+in `mock_server.py`: match → delay → error roll → stateful/static).
+
+Seeding is one shared function, `seed_resource()` in `views.py`:
+when a stateful endpoint is created (by hand or by AI) and its
+`response_body` is a list, that list becomes the resource's seed —
+the AI's coherent dataset from Chapter 10 flows straight into live
+state. The **State tab** in the dashboard shows each resource's
+current items and a "Reset state" button (`POST
+/resources/<id>/reset/` copies `initial_items` back over `items`) —
+essential once tests start mutating things.
+
+Design choice worth noting: state lives in a JSONField, not in
+dynamically created tables. Mock data is small, schema-free, and
+disposable; a real table per user-defined resource would be
+enormous complexity for zero benefit here. Knowing when *not* to
+normalize is also data modeling.
 
 ---
 

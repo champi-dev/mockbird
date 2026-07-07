@@ -11,6 +11,8 @@ const form = reactive({
   method: props.endpoint?.method ?? 'GET',
   path: props.endpoint?.path ?? '/',
   description: props.endpoint?.description ?? '',
+  mode: props.endpoint?.mode ?? 'static',
+  resource: props.endpoint?.resource ?? '',
   status_code: props.endpoint?.status_code ?? 200,
   delay_ms: props.endpoint?.delay_ms ?? 0,
   error_rate: props.endpoint?.error_rate ?? 0,
@@ -63,9 +65,27 @@ function submit() {
               </select>
             </div>
             <div class="field">
-              <label for="path">Path</label>
+              <label for="path">Path ({param} allowed)</label>
               <input id="path" v-model="form.path" required
-                placeholder="/users/42" />
+                placeholder="/users/{id}" />
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label for="mode">Mode</label>
+              <select id="mode" v-model="form.mode">
+                <option value="static">Static response</option>
+                <option value="stateful">Stateful CRUD</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="resource">
+                Resource {{ form.mode === 'stateful' ? '' : '(n/a)' }}
+              </label>
+              <input id="resource" v-model="form.resource"
+                :disabled="form.mode !== 'stateful'"
+                placeholder="products" />
             </div>
           </div>
 

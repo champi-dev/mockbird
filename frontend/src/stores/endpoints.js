@@ -5,6 +5,7 @@ export const useEndpointsStore = defineStore('endpoints', {
   state: () => ({
     endpoints: [],
     logs: [],
+    resources: [],
     loading: false,
   }),
 
@@ -57,6 +58,21 @@ export const useEndpointsStore = defineStore('endpoints', {
     async fetchLogs(projectId) {
       const { data } = await client.get(`/projects/${projectId}/logs/`)
       this.logs = data
+    },
+
+    async fetchResources(projectId) {
+      const { data } = await client.get(
+        `/projects/${projectId}/resources/`,
+      )
+      this.resources = data
+    },
+
+    async resetResource(projectId, resourceId) {
+      const { data } = await client.post(
+        `/projects/${projectId}/resources/${resourceId}/reset/`,
+      )
+      const i = this.resources.findIndex((r) => r.id === resourceId)
+      if (i !== -1) this.resources[i] = data
     },
   },
 })

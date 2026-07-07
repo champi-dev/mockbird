@@ -3,12 +3,14 @@
 import random
 import time
 
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import Endpoint, Project, RequestLog
+from .matching import find_endpoint, render_template
+from .models import Project, RequestLog
+from .stateful import handle_stateful
 
 MAX_DELAY_MS = 30_000
 
@@ -25,9 +27,7 @@ class MockServerView(View):
             )
 
         path = "/" + mock_path
-        endpoint = Endpoint.objects.filter(
-            project=project, method=request.method, path=path
-        ).first()
+        endpoint, params = find_endpoint(project, request.method, path)
 
         if endpoint is None:
             response = JsonResponse(
@@ -38,10 +38,20 @@ class MockServerView(View):
             return response
 
         self._apply_delay(endpoint)
-        status = self._resolve_status(endpoint)
-        response = JsonResponse(
-            endpoint.response_body, status=status, safe=False
-        )
+
+        forced_error = self._roll_error(endpoint)
+        if forced_error:
+            status, body = endpoint.error_status, {"error": "Simulated error."}
+        elif endpoint.mode == "stateful":
+            status, body = handle_stateful(endpoint, params, request.body)
+        else:
+            status = endpoint.status_code
+            body = render_template(endpoint.response_body, params)
+
+        if status == 204:
+            response = HttpResponse(status=204)
+        else:
+            response = JsonResponse(body, status=status, safe=False)
         for key, value in endpoint.headers.items():
             response[key] = value
 
@@ -55,10 +65,8 @@ class MockServerView(View):
             time.sleep(delay / 1000)
 
     @staticmethod
-    def _resolve_status(endpoint):
-        if random.randint(1, 100) <= endpoint.error_rate:
-            return endpoint.error_status
-        return endpoint.status_code
+    def _roll_error(endpoint):
+        return random.randint(1, 100) <= endpoint.error_rate
 
     @staticmethod
     def _log(project, request, path, status, matched):

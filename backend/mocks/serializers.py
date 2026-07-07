@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from .models import Endpoint, Project, RequestLog
+from .models import Endpoint, Project, RequestLog, Resource
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -26,6 +26,8 @@ class EndpointSerializer(serializers.ModelSerializer):
             "id",
             "method",
             "path",
+            "mode",
+            "resource",
             "description",
             "request_example",
             "status_code",
@@ -36,6 +38,23 @@ class EndpointSerializer(serializers.ModelSerializer):
             "error_status",
             "created_at",
         ]
+
+    def validate(self, attrs):
+        mode = attrs.get("mode", getattr(self.instance, "mode", "static"))
+        resource = attrs.get(
+            "resource", getattr(self.instance, "resource", "")
+        )
+        if mode == "stateful" and not resource:
+            raise serializers.ValidationError(
+                {"resource": ["Required for stateful endpoints."]}
+            )
+        return attrs
+
+
+class ResourceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Resource
+        fields = ["id", "name", "items", "initial_items"]
 
 
 class ProjectSerializer(serializers.ModelSerializer):

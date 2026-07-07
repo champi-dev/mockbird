@@ -6,6 +6,7 @@ import { API_BASE } from '../api/client'
 import AiGenerateModal from '../components/AiGenerateModal.vue'
 import EndpointForm from '../components/EndpointForm.vue'
 import MockTester from '../components/MockTester.vue'
+import ResourcePanel from '../components/ResourcePanel.vue'
 import EndpointRow from '../components/EndpointRow.vue'
 import LogsTable from '../components/LogsTable.vue'
 import CopyButton from '../components/CopyButton.vue'
@@ -71,6 +72,11 @@ function openLogs() {
   tab.value = 'logs'
   store.fetchLogs(props.id)
 }
+
+function openState() {
+  tab.value = 'state'
+  store.fetchResources(props.id)
+}
 </script>
 
 <template>
@@ -106,6 +112,12 @@ function openLogs() {
             Endpoints
           </button>
           <button
+            :class="['tab', { active: tab === 'state' }]"
+            @click="openState"
+          >
+            State
+          </button>
+          <button
             :class="['tab', { active: tab === 'logs' }]"
             @click="openLogs"
           >
@@ -133,6 +145,13 @@ function openLogs() {
             />
           </transition-group>
         </section>
+
+        <ResourcePanel
+          v-else-if="tab === 'state'"
+          :resources="store.resources"
+          @reset="(rid) => store.resetResource(id, rid)"
+          @refresh="store.fetchResources(id)"
+        />
 
         <LogsTable
           v-else

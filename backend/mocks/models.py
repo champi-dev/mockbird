@@ -42,14 +42,29 @@ class Project(models.Model):
         return f"{self.name} ({self.slug})"
 
 
+ENDPOINT_MODES = [
+    ("static", "Static response"),
+    ("stateful", "Stateful CRUD on a resource"),
+]
+
+
 class Endpoint(models.Model):
-    """One mock route: method + path -> configured response."""
+    """One mock route: method + path -> configured response.
+
+    Paths may contain `{param}` segments. In static mode, captured
+    params can be templated into the body via "{{params.name}}".
+    In stateful mode the endpoint reads/writes a named Resource.
+    """
 
     project = models.ForeignKey(
         Project, on_delete=models.CASCADE, related_name="endpoints"
     )
     method = models.CharField(max_length=7, choices=HTTP_METHODS)
     path = models.CharField(max_length=255)
+    mode = models.CharField(
+        max_length=8, choices=ENDPOINT_MODES, default="static"
+    )
+    resource = models.CharField(max_length=64, blank=True, default="")
     description = models.CharField(max_length=255, blank=True, default="")
     request_example = models.JSONField(
         default=dict,
@@ -82,6 +97,37 @@ class Endpoint(models.Model):
 
     def __str__(self):
         return f"{self.method} {self.path}"
+
+
+class Resource(models.Model):
+    """A named, mutable JSON collection backing stateful endpoints.
+
+    `initial_items` is the seed; `items` is the live state that
+    stateful CRUD mutates. Reset copies seed back over live state.
+    """
+
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="resources"
+    )
+    name = models.CharField(max_length=64)
+    initial_items = models.JSONField(default=list, blank=True)
+    items = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "name"],
+                name="unique_resource_per_project",
+            )
+        ]
+
+    def reset(self):
+        self.items = self.initial_items
+        self.save(update_fields=["items"])
+
+    def __str__(self):
+        return f"{self.name} ({len(self.items)} items)"
 
 
 class RequestLog(models.Model):

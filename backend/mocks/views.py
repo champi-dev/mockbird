@@ -4,13 +4,30 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .ai import AiUnavailable, generate_endpoints
-from .models import Endpoint, Project, RequestLog
+from .models import Endpoint, Project, RequestLog, Resource
 from .serializers import (
     EndpointSerializer,
     ProjectSerializer,
     RegisterSerializer,
     RequestLogSerializer,
+    ResourceSerializer,
 )
+
+
+def seed_resource(endpoint):
+    """Ensure a stateful endpoint's Resource exists; seed it from a
+    list response_body the first time (e.g. the list endpoint)."""
+    if endpoint.mode != "stateful" or not endpoint.resource:
+        return
+    resource, _ = Resource.objects.get_or_create(
+        project=endpoint.project, name=endpoint.resource
+    )
+    if not resource.initial_items and isinstance(
+        endpoint.response_body, list
+    ):
+        resource.initial_items = endpoint.response_body
+        resource.items = endpoint.response_body
+        resource.save(update_fields=["initial_items", "items"])
 
 
 class RegisterView(generics.CreateAPIView):
@@ -46,7 +63,24 @@ class EndpointViewSet(OwnedProjectMixin, viewsets.ModelViewSet):
         return Endpoint.objects.filter(project=self.project)
 
     def perform_create(self, serializer):
-        serializer.save(project=self.project)
+        endpoint = serializer.save(project=self.project)
+        seed_resource(endpoint)
+
+
+class ResourceListView(OwnedProjectMixin, generics.ListAPIView):
+    serializer_class = ResourceSerializer
+
+    def get_queryset(self):
+        return Resource.objects.filter(project=self.project)
+
+
+class ResourceResetView(OwnedProjectMixin, APIView):
+    def post(self, request, project_pk, pk):
+        resource = generics.get_object_or_404(
+            Resource.objects.filter(project=self.project), pk=pk
+        )
+        resource.reset()
+        return Response(ResourceSerializer(resource).data)
 
 
 class AiGenerateView(OwnedProjectMixin, APIView):
@@ -77,11 +111,15 @@ class AiGenerateView(OwnedProjectMixin, APIView):
             (e.method, e.path)
             for e in project.endpoints.only("method", "path")
         }
-        created = [
-            Endpoint.objects.create(project=project, **definition)
-            for definition in definitions
-            if (definition["method"], definition["path"]) not in existing
-        ]
+        created = []
+        for definition in definitions:
+            if (definition["method"], definition["path"]) in existing:
+                continue
+            endpoint = Endpoint.objects.create(
+                project=project, **definition
+            )
+            seed_resource(endpoint)
+            created.append(endpoint)
         serializer = EndpointSerializer(created, many=True)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 

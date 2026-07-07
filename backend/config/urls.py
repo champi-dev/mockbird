@@ -13,6 +13,8 @@ from mocks.views import (
     ProjectViewSet,
     RegisterView,
     RequestLogListView,
+    ResourceListView,
+    ResourceResetView,
 )
 
 router = DefaultRouter()
@@ -41,6 +43,14 @@ urlpatterns = [
     path(
         "api/projects/<int:project_pk>/endpoints/<int:pk>/",
         endpoint_detail,
+    ),
+    path(
+        "api/projects/<int:project_pk>/resources/",
+        ResourceListView.as_view(),
+    ),
+    path(
+        "api/projects/<int:project_pk>/resources/<int:pk>/reset/",
+        ResourceResetView.as_view(),
     ),
     path(
         "api/projects/<int:project_pk>/generate/",
