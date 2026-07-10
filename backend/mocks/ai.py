@@ -1,15 +1,17 @@
 """Turn a natural-language API description into endpoint definitions
-using OpenAI (gpt-4o-mini, JSON mode)."""
+using any OpenAI-compatible chat completions API (JSON mode).
+
+Configured via settings.AI_BASE_URL / AI_MODEL / AI_API_KEY — defaults to
+a local Ollama running qwen3:1.7b; works unchanged against OpenAI."""
 
 import json
+import re
 
 import requests
 from django.conf import settings
 
 from .models import HTTP_METHODS
 
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-MODEL = "gpt-4o-mini"
 VALID_METHODS = {m for m, _ in HTTP_METHODS}
 
 SYSTEM_PROMPT = """\
@@ -58,17 +60,21 @@ class AiUnavailable(Exception):
 
 
 def generate_endpoints(description: str) -> list[dict]:
-    """Call OpenAI and return a sanitized list of endpoint dicts."""
-    api_key = getattr(settings, "OPENAI_API_KEY", "")
-    if not api_key:
-        raise AiUnavailable("OPENAI_API_KEY is not configured.")
+    """Call the configured model and return sanitized endpoint dicts."""
+    base_url = getattr(settings, "AI_BASE_URL", "").rstrip("/")
+    model = getattr(settings, "AI_MODEL", "")
+    if not base_url or not model:
+        raise AiUnavailable("AI_BASE_URL / AI_MODEL are not configured.")
+
+    # Local runtimes (Ollama) ignore auth; hosted APIs need a real key
+    api_key = getattr(settings, "AI_API_KEY", "") or "unused"
 
     try:
         resp = requests.post(
-            OPENAI_URL,
+            f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": MODEL,
+                "model": model,
                 "temperature": 0.4,
                 "response_format": {"type": "json_object"},
                 "messages": [
@@ -76,15 +82,26 @@ def generate_endpoints(description: str) -> list[dict]:
                     {"role": "user", "content": description[:2000]},
                 ],
             },
-            timeout=30,
+            timeout=120,  # local small models can be slow on cold start
         )
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
-        payload = json.loads(content)
+        payload = json.loads(_extract_json(content))
     except (requests.RequestException, KeyError, ValueError) as exc:
         raise AiUnavailable(f"AI request failed: {exc}") from exc
 
     return parse_endpoints(payload)
+
+
+def _extract_json(content: str) -> str:
+    """Tolerate reasoning-model output: strip <think> blocks and code
+    fences, then cut to the outermost JSON object."""
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+    content = re.sub(r"```(?:json)?|```", "", content)
+    start, end = content.find("{"), content.rfind("}")
+    if start != -1 and end > start:
+        return content[start : end + 1]
+    return content.strip()
 
 
 def parse_endpoints(payload: dict) -> list[dict]:

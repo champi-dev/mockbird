@@ -103,7 +103,12 @@ REST_FRAMEWORK = {
     },
 }
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+# AI endpoint generation — any OpenAI-compatible chat completions API.
+# Defaults target a local Ollama; point AI_BASE_URL at api.openai.com/v1
+# and set AI_API_KEY (or OPENAI_API_KEY) to use OpenAI instead.
+AI_BASE_URL = os.environ.get("AI_BASE_URL", "http://localhost:11434/v1")
+AI_MODEL = os.environ.get("AI_MODEL", "qwen3:1.7b")
+AI_API_KEY = os.environ.get("AI_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=8),
