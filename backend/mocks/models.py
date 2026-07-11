@@ -29,6 +29,8 @@ class Project(models.Model):
     name = models.CharField(max_length=100)
     slug = models.SlugField(max_length=48, unique=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Live AI-generation progress: {"percent": int, "text": str}
+    ai_progress = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["-created_at"]

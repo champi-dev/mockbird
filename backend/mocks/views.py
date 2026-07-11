@@ -1,3 +1,7 @@
+from contextlib import contextmanager
+
+from django.conf import settings
+from django.db import connection
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -13,6 +17,37 @@ from .serializers import (
     RequestLogSerializer,
     ResourceSerializer,
 )
+
+
+_GEN_LOCK_NS = 0x6D6B6264  # arbitrary namespace: "mkbd"
+
+
+@contextmanager
+def generation_slot():
+    """Server-wide concurrency gate for AI generation, implemented with
+    postgres advisory locks so it works across gunicorn workers. Yields
+    False when every slot is busy (caller should return 429)."""
+    if connection.vendor != "postgresql":  # dev sqlite: no gate
+        yield True
+        return
+    acquired = None
+    with connection.cursor() as cur:
+        for slot in range(settings.AI_MAX_CONCURRENT):
+            cur.execute(
+                "SELECT pg_try_advisory_lock(%s, %s)", [_GEN_LOCK_NS, slot]
+            )
+            if cur.fetchone()[0]:
+                acquired = slot
+                break
+    try:
+        yield acquired is not None
+    finally:
+        if acquired is not None:
+            with connection.cursor() as cur:
+                cur.execute(
+                    "SELECT pg_advisory_unlock(%s, %s)",
+                    [_GEN_LOCK_NS, acquired],
+                )
 
 
 def seed_resource(endpoint):
@@ -100,15 +135,29 @@ class AiGenerateView(OwnedProjectMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            definitions = generate_endpoints(description)
-        except AiUnavailable as exc:
-            return Response(
-                {"detail": str(exc)},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        def progress(percent, text):
+            Project.objects.filter(pk=project.pk).update(
+                ai_progress={"percent": percent, "text": text}
             )
 
-        created = create_endpoints(project, definitions)
+        with generation_slot() as slot_free:
+            if not slot_free:
+                return Response(
+                    {"detail": "All AI capacity is in use right now — "
+                               "try again in a few seconds."},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+            try:
+                definitions = generate_endpoints(description, progress)
+            except AiUnavailable as exc:
+                progress(0, "")
+                return Response(
+                    {"detail": str(exc)},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            created = create_endpoints(project, definitions)
+
+        progress(100, "Done!")
         serializer = EndpointSerializer(created, many=True)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -173,6 +222,14 @@ class PublicDocsView(APIView):
                 "endpoints": endpoints,
             }
         )
+
+
+class AiProgressView(OwnedProjectMixin, APIView):
+    """Live progress of the current AI generation for a project."""
+
+    def get(self, request, project_pk):
+        self.project.refresh_from_db(fields=["ai_progress"])
+        return Response(self.project.ai_progress or {})
 
 
 class RequestLogListView(OwnedProjectMixin, generics.ListAPIView):

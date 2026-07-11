@@ -10,6 +10,7 @@ from mocks.mock_server import MockServerView
 from mocks.streaming import log_stream
 from mocks.views import (
     AiGenerateView,
+    AiProgressView,
     ImportOpenApiView,
     PublicDocsView,
     EndpointViewSet,
@@ -58,6 +59,10 @@ urlpatterns = [
     path(
         "api/projects/<int:project_pk>/generate/",
         AiGenerateView.as_view(),
+    ),
+    path(
+        "api/projects/<int:project_pk>/generate/progress/",
+        AiProgressView.as_view(),
     ),
     path(
         "api/projects/<int:project_pk>/import-openapi/",

@@ -51,7 +51,7 @@ class AiUnavailable(Exception):
     """AI generation cannot be performed right now."""
 
 
-def generate_endpoints(description: str) -> list[dict]:
+def generate_endpoints(description: str, progress=None) -> list[dict]:
     """Two-stage generation tuned for small local models:
 
     1. The model extracts a resource plan (names, fields, actions) —
@@ -60,11 +60,28 @@ def generate_endpoints(description: str) -> list[dict]:
     3. The CRUD endpoint skeleton is assembled deterministically in
        code, so structure, statefulness and seeding are guaranteed.
     """
+    def report(percent, text):
+        if progress:
+            progress(percent, text)
+
+    report(5, "Analyzing your description…")
     plan = _plan_resources(description)[:5]
+    names = ", ".join(r["name"] for r in plan)
+    report(30, f"Designed {len(plan)} resource{'s' if len(plan) != 1 else ''}: {names}. Creating realistic data…")
+
+    done = 0
+    def gen(res):
+        nonlocal done
+        records = _gen_records(description, res)
+        done += 1
+        pct = 30 + int(55 * done / max(len(plan), 1))
+        report(pct, f"Created data for '{res['name']}' ({done}/{len(plan)})…")
+        return records
+
     with ThreadPoolExecutor(max_workers=3) as pool:
-        record_sets = list(
-            pool.map(lambda r: _gen_records(description, r), plan)
-        )
+        record_sets = list(pool.map(gen, plan))
+
+    report(90, "Assembling endpoints…")
     endpoints: list[dict] = []
     for res, records in zip(plan, record_sets):
         endpoints.extend(_crud_endpoints(res, records))

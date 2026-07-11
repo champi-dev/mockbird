@@ -1,7 +1,13 @@
 <script setup>
 import { ref } from 'vue'
 
-defineProps({ busy: { type: Boolean, default: false } })
+defineProps({
+  busy: { type: Boolean, default: false },
+  progress: {
+    type: Object,
+    default: () => ({ percent: 0, text: '' }),
+  },
+})
 const emit = defineEmits(['generate', 'close'])
 
 const description = ref('')
@@ -38,6 +44,17 @@ returns 404."
             />
           </div>
           <p v-if="error" class="error-text">{{ error }}</p>
+          <div v-if="busy" class="progress-wrap">
+            <div class="progress-track">
+              <div
+                class="progress-fill"
+                :style="{ width: (progress.percent || 2) + '%' }"
+              />
+            </div>
+            <p class="progress-text">
+              {{ progress.text || 'Warming up the model…' }}
+            </p>
+          </div>
           <div class="row actions">
             <button
               type="button"
@@ -88,5 +105,34 @@ textarea {
 
 .actions {
   justify-content: flex-end;
+}
+
+.progress-wrap {
+  margin-bottom: 1rem;
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgb(100 116 139 / 0.2);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #818cf8, #6366f1);
+  transition: width 0.6s ease;
+}
+
+.progress-text {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted, #64748b);
+  animation: pulse-text 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-text {
+  50% { opacity: 0.55; }
 }
 </style>

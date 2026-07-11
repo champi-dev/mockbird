@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from django.contrib.auth.models import User
 from django.test import override_settings
@@ -95,7 +95,7 @@ class GenerateApiTests(APITestCase):
         self.assertEqual(r.status_code, 201)
         self.assertEqual(len(r.data), 2)
         self.assertEqual(Endpoint.objects.count(), 2)
-        gen.assert_called_once_with("a todo API")
+        gen.assert_called_once_with("a todo API", ANY)
 
     @patch("mocks.views.generate_endpoints", return_value=FAKE_ENDPOINTS)
     def test_skips_duplicate_routes(self, gen):

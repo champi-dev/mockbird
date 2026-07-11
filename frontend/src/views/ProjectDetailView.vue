@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useProjectsStore } from '../stores/projects'
 import { useEndpointsStore } from '../stores/endpoints'
-import { API_BASE } from '../api/client'
+import client, { API_BASE } from '../api/client'
 import AiGenerateModal from '../components/AiGenerateModal.vue'
 import ImportOpenApiModal from '../components/ImportOpenApiModal.vue'
 import EndpointForm from '../components/EndpointForm.vue'
@@ -57,8 +57,24 @@ async function save(payload) {
   editing.value = null
 }
 
+const aiProgress = ref({ percent: 0, text: '' })
+let progressTimer = null
+
+async function pollProgress() {
+  try {
+    const { data } = await client.get(
+      `/projects/${props.id}/generate/progress/`,
+    )
+    if (data && typeof data.percent === 'number') aiProgress.value = data
+  } catch {
+    /* progress is cosmetic — never break generation over it */
+  }
+}
+
 async function generate(description) {
   aiBusy.value = true
+  aiProgress.value = { percent: 0, text: '' }
+  progressTimer = setInterval(pollProgress, 1200)
   try {
     await store.generateEndpoints(props.id, description)
     showAi.value = false
@@ -70,6 +86,7 @@ async function generate(description) {
         : e.response?.data?.detail || 'Generation failed. Try again.',
     )
   } finally {
+    clearInterval(progressTimer)
     aiBusy.value = false
   }
 }
@@ -240,6 +257,7 @@ function openEndpoints() {
           v-if="showAi"
           ref="aiModal"
           :busy="aiBusy"
+          :progress="aiProgress"
           @generate="generate"
           @close="showAi = false"
         />

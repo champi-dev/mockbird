@@ -99,7 +99,7 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ),
     "DEFAULT_THROTTLE_RATES": {
-        "ai": os.environ.get("AI_THROTTLE_RATE", "10/hour"),
+        "ai": os.environ.get("AI_THROTTLE_RATE", "6/min"),
     },
 }
 
@@ -109,6 +109,8 @@ REST_FRAMEWORK = {
 AI_BASE_URL = os.environ.get("AI_BASE_URL", "http://localhost:11434/v1")
 AI_MODEL = os.environ.get("AI_MODEL", "qwen3:1.7b")
 AI_API_KEY = os.environ.get("AI_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
+# Server-wide cap on simultaneous AI generations (protects the local GPU)
+AI_MAX_CONCURRENT = int(os.environ.get("AI_MAX_CONCURRENT", "3"))
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=8),
