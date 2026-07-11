@@ -1,7 +1,9 @@
+import threading
+import time
 from contextlib import contextmanager
 
 from django.conf import settings
-from django.db import connection
+from django.db import close_old_connections, connection
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -127,6 +129,10 @@ class AiGenerateView(OwnedProjectMixin, APIView):
     throttle_scope = "ai"
 
     def post(self, request, project_pk):
+        """Start generation in the background and return immediately —
+        Cloudflare (and most proxies) cut requests at ~100s, which a
+        local-model generation can exceed. Clients follow along via the
+        progress endpoint, which also delivers success/failure."""
         project = self.project
         description = str(request.data.get("description", "")).strip()
         if not description:
@@ -135,31 +141,109 @@ class AiGenerateView(OwnedProjectMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        def progress(percent, text):
-            Project.objects.filter(pk=project.pk).update(
-                ai_progress={"percent": percent, "text": text}
+        _set_progress(project.pk, 1, "Starting…", "running")
+        if getattr(settings, "AI_RUN_SYNC", False):  # tests
+            _run_generation(project.pk, description)
+        else:
+            threading.Thread(
+                target=_generation_worker,
+                args=(project.pk, description),
+                daemon=True,
+            ).start()
+        return Response({"status": "started"}, status=status.HTTP_202_ACCEPTED)
+
+
+class _GenerationLog:
+    """Collects streamed model output into labeled sections and writes
+    it to Project.ai_progress at most ~2x/second (not per token)."""
+
+    MAX_CHARS = 8000
+
+    def __init__(self):
+        self._sections: dict[str, str] = {}
+        self._lock = threading.Lock()
+        self._last_flush = 0.0
+        self._dirty = False
+
+    def write(self, label, fragment):
+        with self._lock:
+            self._sections[label] = (
+                self._sections.get(label, "") + fragment
+            )[-self.MAX_CHARS:]
+            self._dirty = True
+
+    def render(self):
+        with self._lock:
+            self._dirty = False
+            return "\n".join(
+                f"── {label} " + "─" * max(1, 40 - len(label))
+                + f"\n{text}"
+                for label, text in self._sections.items()
+            )[-self.MAX_CHARS:]
+
+    def should_flush(self):
+        if not self._dirty:
+            return False
+        now = time.monotonic()
+        if now - self._last_flush >= 0.5:
+            self._last_flush = now
+            return True
+        return False
+
+
+def _set_progress(project_pk, percent, text, state="running", log_text=None):
+    payload = {"percent": percent, "text": text, "status": state}
+    if log_text is not None:
+        payload["log"] = log_text
+    Project.objects.filter(pk=project_pk).update(ai_progress=payload)
+
+
+def _generation_worker(project_pk, description):
+    """Thread entrypoint: manage this thread's own DB connections."""
+    close_old_connections()
+    try:
+        _run_generation(project_pk, description)
+    finally:
+        close_old_connections()
+
+
+def _run_generation(project_pk, description):
+    """Run one AI generation; the outcome lands in ai_progress."""
+    gen_log = _GenerationLog()
+    state = {"percent": 1, "text": "Starting…"}
+
+    def progress(percent, text):
+        state.update(percent=percent, text=text)
+        _set_progress(project_pk, percent, text, log_text=gen_log.render())
+
+    def log(label, fragment):
+        gen_log.write(label, fragment)
+        if gen_log.should_flush():
+            _set_progress(
+                project_pk, state["percent"], state["text"],
+                log_text=gen_log.render(),
             )
 
+    try:
         with generation_slot() as slot_free:
             if not slot_free:
-                return Response(
-                    {"detail": "All AI capacity is in use right now — "
-                               "try again in a few seconds."},
-                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                _set_progress(
+                    project_pk, 0,
+                    "All AI capacity is in use right now — "
+                    "try again in a few seconds.", "error",
                 )
-            try:
-                definitions = generate_endpoints(description, progress)
-            except AiUnavailable as exc:
-                progress(0, "")
-                return Response(
-                    {"detail": str(exc)},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-            created = create_endpoints(project, definitions)
-
-        progress(100, "Done!")
-        serializer = EndpointSerializer(created, many=True)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+                return
+            definitions = generate_endpoints(description, progress, log=log)
+            project = Project.objects.get(pk=project_pk)
+            create_endpoints(project, definitions)
+        _set_progress(project_pk, 100, "Done!", "done", gen_log.render())
+    except AiUnavailable as exc:
+        _set_progress(project_pk, 0, str(exc), "error", gen_log.render())
+    except Exception as exc:  # never leave the client polling forever
+        _set_progress(
+            project_pk, 0, f"Generation failed: {exc}", "error",
+            gen_log.render(),
+        )
 
 
 def create_endpoints(project, definitions):

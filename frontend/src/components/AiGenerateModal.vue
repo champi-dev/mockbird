@@ -1,19 +1,29 @@
 <script setup>
-import { ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 
-defineProps({
+const props = defineProps({
   busy: { type: Boolean, default: false },
   progress: {
     type: Object,
-    default: () => ({ percent: 0, text: '' }),
+    default: () => ({ percent: 0, text: '', log: '' }),
   },
 })
 const emit = defineEmits(['generate', 'close'])
 
 const description = ref('')
 const error = ref('')
+const logEl = ref(null)
 
 defineExpose({ setError: (msg) => (error.value = msg) })
+
+// Keep the live model-output log scrolled to the latest tokens
+watch(
+  () => props.progress.log,
+  async () => {
+    await nextTick()
+    if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
+  },
+)
 
 function submit() {
   if (!description.value.trim()) return
@@ -54,6 +64,11 @@ returns 404."
             <p class="progress-text">
               {{ progress.text || 'Warming up the model…' }}
             </p>
+            <pre
+              v-if="progress.log"
+              ref="logEl"
+              class="model-log"
+            >{{ progress.log }}</pre>
           </div>
           <div class="row actions">
             <button
@@ -134,5 +149,20 @@ textarea {
 
 @keyframes pulse-text {
   50% { opacity: 0.55; }
+}
+
+.model-log {
+  margin: 0.6rem 0 0;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #94f7c8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

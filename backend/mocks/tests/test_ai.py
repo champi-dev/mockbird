@@ -4,6 +4,8 @@ from django.contrib.auth.models import User
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
+from django.test import override_settings
+
 from mocks.ai import AiUnavailable, parse_endpoints
 from mocks.models import Endpoint, Project
 
@@ -87,16 +89,19 @@ class GenerateApiTests(APITestCase):
         r = self.client.post(self.url, {}, format="json")
         self.assertEqual(r.status_code, 400)
 
+    @override_settings(AI_RUN_SYNC=True)
     @patch("mocks.views.generate_endpoints", return_value=FAKE_ENDPOINTS)
     def test_creates_endpoints_from_ai(self, gen):
         r = self.client.post(
             self.url, {"description": "a todo API"}, format="json"
         )
-        self.assertEqual(r.status_code, 201)
-        self.assertEqual(len(r.data), 2)
+        self.assertEqual(r.status_code, 202)
         self.assertEqual(Endpoint.objects.count(), 2)
-        gen.assert_called_once_with("a todo API", ANY)
+        gen.assert_called_once_with("a todo API", ANY, log=ANY)
+        self.project.refresh_from_db()
+        self.assertEqual(self.project.ai_progress["status"], "done")
 
+    @override_settings(AI_RUN_SYNC=True)
     @patch("mocks.views.generate_endpoints", return_value=FAKE_ENDPOINTS)
     def test_skips_duplicate_routes(self, gen):
         Endpoint.objects.create(
@@ -105,18 +110,22 @@ class GenerateApiTests(APITestCase):
         r = self.client.post(
             self.url, {"description": "a todo API"}, format="json"
         )
-        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.status_code, 202)
         self.assertEqual(Endpoint.objects.count(), 2)
 
+    @override_settings(AI_RUN_SYNC=True)
     @patch(
         "mocks.views.generate_endpoints",
         side_effect=AiUnavailable("no key"),
     )
-    def test_503_when_ai_unavailable(self, gen):
+    def test_error_reported_when_ai_unavailable(self, gen):
         r = self.client.post(
             self.url, {"description": "x"}, format="json"
         )
-        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.status_code, 202)
+        self.project.refresh_from_db()
+        self.assertEqual(self.project.ai_progress["status"], "error")
+        self.assertIn("no key", self.project.ai_progress["text"])
 
     def test_cannot_generate_on_others_project(self):
         other = User.objects.create_user("eve", password="pw123456")

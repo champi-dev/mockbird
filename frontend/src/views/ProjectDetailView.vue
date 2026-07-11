@@ -73,11 +73,11 @@ async function pollProgress() {
 
 async function generate(description) {
   aiBusy.value = true
-  aiProgress.value = { percent: 0, text: '' }
-  progressTimer = setInterval(pollProgress, 1200)
+  aiProgress.value = { percent: 1, text: '' }
   try {
+    // Returns 202 immediately; the generation itself runs server-side
+    // (proxies cut long requests) and we follow it via progress polling.
     await store.generateEndpoints(props.id, description)
-    showAi.value = false
   } catch (e) {
     const status = e.response?.status
     aiModal.value?.setError(
@@ -85,10 +85,24 @@ async function generate(description) {
         ? 'Rate limit reached — try again later.'
         : e.response?.data?.detail || 'Generation failed. Try again.',
     )
-  } finally {
-    clearInterval(progressTimer)
     aiBusy.value = false
+    return
   }
+  progressTimer = setInterval(async () => {
+    await pollProgress()
+    const state = aiProgress.value.status
+    if (state === 'done') {
+      clearInterval(progressTimer)
+      await store.fetchEndpoints(props.id)
+      await store.fetchResources(props.id)
+      showAi.value = false
+      aiBusy.value = false
+    } else if (state === 'error') {
+      clearInterval(progressTimer)
+      aiModal.value?.setError(aiProgress.value.text || 'Generation failed. Try again.')
+      aiBusy.value = false
+    }
+  }, 1200)
 }
 
 async function importSpec(spec) {
@@ -133,7 +147,10 @@ function stopStream() {
   live.value = false
 }
 
-onUnmounted(stopStream)
+onUnmounted(() => {
+  stopStream()
+  clearInterval(progressTimer)
+})
 
 function openState() {
   tab.value = 'state'

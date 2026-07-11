@@ -32,14 +32,24 @@ def evaluate_case(H, cid, desc, keywords):
     proj = r.json(); pid, slug = proj["id"], proj["slug"]
     t0 = time.time()
     r = requests.post(f"{BASE}/api/projects/{pid}/generate/", headers=H,
-                      json={"description": desc}, timeout=290)
-    took = time.time() - t0
+                      json={"description": desc}, timeout=30)
     issues, notes = [], []
-    eps = r.json() if r.status_code == 201 else []
-    if r.status_code != 201:
-        issues.append(f"GENERATION FAILED {r.status_code}: {r.text[:120]}")
+    if r.status_code != 202:
+        requests.delete(f"{BASE}/api/projects/{pid}/", headers=H)
+        return {"case": cid, "ok": False, "issues": [f"start failed {r.status_code}: {r.text[:120]}"], "notes": [], "took": 0, "endpoints": []}
+    state = ""
+    while time.time() - t0 < 290:
+        time.sleep(4)
+        p = requests.get(f"{BASE}/api/projects/{pid}/generate/progress/", headers=H).json()
+        state = p.get("status", "")
+        if state in ("done", "error"):
+            break
+    took = time.time() - t0
+    if state != "done":
+        issues.append(f"GENERATION {state or 'timed out'}: {p.get('text','')[:120]}")
         requests.delete(f"{BASE}/api/projects/{pid}/", headers=H)
         return {"case": cid, "ok": False, "issues": issues, "notes": [], "took": took, "endpoints": []}
+    eps = requests.get(f"{BASE}/api/projects/{pid}/endpoints/", headers=H).json()
 
     # --- structural ---
     if len(eps) < 3: issues.append(f"only {len(eps)} endpoints")

@@ -47,11 +47,12 @@ export const useEndpointsStore = defineStore('endpoints', {
     },
 
     async generateEndpoints(projectId, description) {
+      // 202: generation runs in the background; poll progress for the
+      // outcome, then re-fetch endpoints.
       const { data } = await client.post(
         `/projects/${projectId}/generate/`,
         { description },
       )
-      this.endpoints.push(...data)
       return data
     },
 

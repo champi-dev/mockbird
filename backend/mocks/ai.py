@@ -51,7 +51,7 @@ class AiUnavailable(Exception):
     """AI generation cannot be performed right now."""
 
 
-def generate_endpoints(description: str, progress=None) -> list[dict]:
+def generate_endpoints(description: str, progress=None, log=None) -> list[dict]:
     """Two-stage generation tuned for small local models:
 
     1. The model extracts a resource plan (names, fields, actions) —
@@ -65,14 +65,14 @@ def generate_endpoints(description: str, progress=None) -> list[dict]:
             progress(percent, text)
 
     report(5, "Analyzing your description…")
-    plan = _plan_resources(description)[:5]
+    plan = _plan_resources(description, log)[:5]
     names = ", ".join(r["name"] for r in plan)
     report(30, f"Designed {len(plan)} resource{'s' if len(plan) != 1 else ''}: {names}. Creating realistic data…")
 
     done = 0
     def gen(res):
         nonlocal done
-        records = _gen_records(description, res)
+        records = _gen_records(description, res, log)
         done += 1
         pct = 30 + int(55 * done / max(len(plan), 1))
         report(pct, f"Created data for '{res['name']}' ({done}/{len(plan)})…")
@@ -88,12 +88,13 @@ def generate_endpoints(description: str, progress=None) -> list[dict]:
     return endpoints[:20]
 
 
-def _plan_resources(description: str) -> list[dict]:
+def _plan_resources(description: str, log=None) -> list[dict]:
     last_error = None
     for attempt in range(4):
         try:
             payload = _call_model(
-                PLAN_PROMPT, description[:2000], attempt
+                PLAN_PROMPT, description[:2000], attempt,
+                on_token=_writer(log, "resource plan", attempt),
             )
         except AiUnavailable as exc:
             last_error = exc
@@ -159,7 +160,7 @@ def _link_parents(description: str, resources: list[dict]) -> list[dict]:
     return resources
 
 
-def _gen_records(description: str, res: dict) -> list[dict]:
+def _gen_records(description: str, res: dict, log=None) -> list[dict]:
     prompt = RECORDS_PROMPT.format(
         name=res["name"],
         description=description[:1500],
@@ -167,7 +168,10 @@ def _gen_records(description: str, res: dict) -> list[dict]:
     )
     for attempt in range(2):
         try:
-            payload = _call_model(prompt, description[:1500], attempt)
+            payload = _call_model(
+                prompt, description[:1500], attempt,
+                on_token=_writer(log, res["name"], attempt),
+            )
         except AiUnavailable:
             continue
         records = [
@@ -225,7 +229,18 @@ def _slugify(value) -> str:
     return value.strip("_")[:64]
 
 
-def _call_model(system_prompt: str, user_content: str, attempt: int) -> dict:
+def _writer(log, label, attempt):
+    """Token callback for one model call, or None when not logging."""
+    if not log:
+        return None
+    if attempt:
+        log(label, f"\n[attempt {attempt + 1}]\n")
+    return lambda fragment: log(label, fragment)
+
+
+def _call_model(
+    system_prompt: str, user_content: str, attempt: int, on_token=None
+) -> dict:
     base_url = getattr(settings, "AI_BASE_URL", "").rstrip("/")
     model = getattr(settings, "AI_MODEL", "")
     if not base_url or not model:
@@ -244,6 +259,7 @@ def _call_model(system_prompt: str, user_content: str, attempt: int) -> dict:
                 "temperature": 0.0 + 0.3 * attempt,
                 "response_format": {"type": "json_object"},
                 "max_tokens": 3000,
+                "stream": True,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     # /no_think: qwen3 soft switch — without it the model
@@ -253,9 +269,28 @@ def _call_model(system_prompt: str, user_content: str, attempt: int) -> dict:
                 ],
             },
             timeout=60,  # per attempt; gunicorn worker timeout is 300s
+            stream=True,
         )
         resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
+        # OpenAI-style SSE stream: forward each content delta to the
+        # live log so users can watch the model work
+        parts: list[str] = []
+        for line in resp.iter_lines():
+            if not line or not line.startswith(b"data: "):
+                continue
+            data = line[6:]
+            if data.strip() == b"[DONE]":
+                break
+            try:
+                delta = json.loads(data)["choices"][0]["delta"]
+            except (ValueError, KeyError, IndexError):
+                continue
+            fragment = delta.get("content") or ""
+            if fragment:
+                parts.append(fragment)
+                if on_token:
+                    on_token(fragment)
+        content = "".join(parts)
         return json.loads(_extract_json(content))
     except (requests.RequestException, KeyError, ValueError) as exc:
         raise AiUnavailable(f"AI request failed: {exc}") from exc
