@@ -12,6 +12,8 @@ def find_endpoint(project, method, path):
     if exact:
         return exact, {}
 
+    # Exact routes always beat patterns (/products/special wins over
+    # /products/{id}); among patterns, first match in creation order.
     candidates = Endpoint.objects.filter(
         project=project, method=method, path__contains="{"
     )

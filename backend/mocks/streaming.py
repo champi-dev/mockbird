@@ -32,6 +32,8 @@ def iter_log_events(project, last_id, max_seconds=MAX_LIFETIME_SECONDS):
             last_id = log.id
             data = json.dumps(RequestLogSerializer(log).data)
             yield f"data: {data}\n\n"
+        # SSE comment frame: ignored by EventSource, but keeps idle
+        # connections alive through proxies.
         yield ": keepalive\n\n"
         time.sleep(POLL_SECONDS)
 

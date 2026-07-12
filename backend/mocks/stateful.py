@@ -15,6 +15,8 @@ def handle_stateful(endpoint, params, body_bytes):
     resource, _ = Resource.objects.get_or_create(
         project=endpoint.project, name=endpoint.resource
     )
+    # Whatever the user named their param ({id}, {petId}...), the
+    # first captured value is treated as the item id.
     item_id = next(iter(params.values()), None)
     payload = _parse_body(body_bytes)
     method = endpoint.method
@@ -40,6 +42,10 @@ def handle_stateful(endpoint, params, body_bytes):
             if method == "PATCH"
             else {"id": item["id"], **payload}
         )
+        # Identity (`is`) picks exactly the matched dict even when two
+        # items are equal by value; rebuilding the list (instead of
+        # mutating in place) guarantees Django sees the JSONField as
+        # changed and persists it.
         resource.items = [
             updated if i is item else i for i in resource.items
         ]

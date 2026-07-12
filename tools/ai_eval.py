@@ -37,6 +37,8 @@ def evaluate_case(H, cid, desc, keywords):
     if r.status_code != 202:
         requests.delete(f"{BASE}/api/projects/{pid}/", headers=H)
         return {"case": cid, "ok": False, "issues": [f"start failed {r.status_code}: {r.text[:120]}"], "notes": [], "took": 0, "endpoints": []}
+    # Generation is async (202 + progress polling), same as the SPA;
+    # 290s stays under the server's 300s worker timeout.
     state = ""
     while time.time() - t0 < 290:
         time.sleep(4)
@@ -62,7 +64,7 @@ def evaluate_case(H, cid, desc, keywords):
     if not stateful: issues.append("no stateful endpoints at all")
     resources = {e["resource"] for e in stateful}
 
-    # semantic: at least one keyword reflected in resources/paths
+    # --- semantic: at least one keyword reflected in resources/paths
     blob = " ".join([e["path"] + " " + e["resource"] for e in eps]).lower()
     if not any(k in blob for k in keywords):
         issues.append(f"domain mismatch: none of {keywords} in {sorted(resources) or [e['path'] for e in eps]}")

@@ -156,7 +156,7 @@ function submit() {
   display: grid;
   place-items: center;
   z-index: 50;
-  padding: 1.5rem;
+  padding: clamp(0.6rem, 3vw, 1.5rem);
 }
 
 .modal {

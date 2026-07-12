@@ -22,9 +22,11 @@ defineProps({
 
 <style scoped>
 .auth-wrap {
-  min-height: 100vh;
+  /* vh ignores CSS zoom — divide so the card centers on 4K too */
+  min-height: calc(100vh / var(--zoom, 1));
   display: grid;
   place-items: center;
+  overflow-y: auto;
   background:
     radial-gradient(60rem 30rem at 80% -10%, #eef2ff, transparent),
     radial-gradient(50rem 25rem at 0% 110%, #f0fdfa, transparent),
@@ -35,7 +37,7 @@ defineProps({
 .auth-card {
   width: 100%;
   max-width: 400px;
-  padding: 2.5rem;
+  padding: clamp(1.25rem, 6vw, 2.5rem);
 }
 
 .brand {

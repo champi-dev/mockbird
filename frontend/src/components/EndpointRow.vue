@@ -76,6 +76,8 @@ const example = computed(() => {
 .path {
   font-size: 0.85rem;
   font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .status {
@@ -119,5 +121,29 @@ pre {
   font-size: 0.75rem;
   margin: 0.35rem 0 0;
   overflow-x: auto;
+}
+
+@media (max-width: 640px) {
+  .ep {
+    row-gap: 0.5rem;
+  }
+
+  /* push the action buttons onto their own line */
+  .spacer {
+    flex-basis: 100%;
+    height: 0;
+  }
+}
+
+@media (max-width: 400px) {
+  .ep {
+    gap: 0.4rem;
+    padding: 0.7rem 0.8rem;
+  }
+
+  .sm {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.74rem;
+  }
 }
 </style>

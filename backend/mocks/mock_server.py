@@ -37,6 +37,8 @@ class MockServerView(View):
             self._log(project, request, path, 404, matched=False)
             return response
 
+        # Order matters: delay applies even to simulated errors, and
+        # an error roll short-circuits before any state is touched.
         self._apply_delay(endpoint)
 
         forced_error = self._roll_error(endpoint)
@@ -66,6 +68,8 @@ class MockServerView(View):
 
     @staticmethod
     def _roll_error(endpoint):
+        # error_rate is a 0-100 percentage; rate 0 can never trigger
+        # (randint lower bound is 1), rate 100 always does.
         return random.randint(1, 100) <= endpoint.error_rate
 
     @staticmethod

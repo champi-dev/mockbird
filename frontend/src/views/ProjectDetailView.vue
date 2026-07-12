@@ -296,8 +296,9 @@ function openEndpoints() {
 }
 
 h1 {
-  font-size: 1.6rem;
+  font-size: clamp(1.25rem, 3.5vw + 0.5rem, 1.6rem);
   margin-bottom: 0.4rem;
+  overflow-wrap: anywhere;
 }
 
 .url code {
@@ -309,6 +310,13 @@ h1 {
   border-bottom: 1px solid var(--border);
   margin-bottom: 1.25rem;
   gap: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -316,6 +324,7 @@ h1 {
   border: none;
   border-bottom: 2px solid transparent;
   padding: 0.6rem 1rem;
+  white-space: nowrap;
   font: 600 0.875rem 'Inter', sans-serif;
   color: var(--text-soft);
   cursor: pointer;
@@ -336,5 +345,17 @@ h1 {
 .empty {
   text-align: center;
   padding: 3rem 0;
+}
+
+@media (max-width: 480px) {
+  .head .row .btn {
+    padding: 0.5rem 0.7rem;
+    font-size: 0.8rem;
+  }
+
+  .tab {
+    padding: 0.55rem 0.7rem;
+    font-size: 0.82rem;
+  }
 }
 </style>

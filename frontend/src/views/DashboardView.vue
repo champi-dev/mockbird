@@ -72,7 +72,7 @@ async function create() {
 }
 
 h1 {
-  font-size: 1.75rem;
+  font-size: clamp(1.4rem, 4vw + 0.5rem, 1.75rem);
 }
 
 .create-bar {
@@ -81,7 +81,8 @@ h1 {
 }
 
 .create-bar input {
-  flex: 1;
+  flex: 1 1 200px;
+  min-width: 0;
   padding: 0.65rem 0.85rem;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -96,7 +97,7 @@ h1 {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: 1rem;
 }
 

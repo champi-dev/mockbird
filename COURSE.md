@@ -377,9 +377,17 @@ of Chapter 2.
 
 ## Chapter 10 — A touch of AI: describe an API, get its mock
 
-The newest feature: on a project page, "✨ Generate with AI" takes a
-plain-English description ("a todo API with list, detail, create,
-delete…") and creates real endpoints. Three files carry it.
+> **Historical note:** this chapter describes the AI feature as it
+> was *first* built — a synchronous call to OpenAI's `gpt-4o-mini`.
+> The current code no longer works this way: Chapter 14 rebuilds it
+> around a local model (qwen3:1.7b via Ollama) and Chapter 15 makes
+> it asynchronous. Read this chapter for the design principles
+> (untrusted output, validation, throttling), which all survived the
+> rewrite.
+
+On a project page, "✨ Generate with AI" takes a plain-English
+description ("a todo API with list, detail, create, delete…") and
+creates real endpoints. Three files carry it.
 
 **`mocks/ai.py` — the boundary with the model.** We call OpenAI's
 `gpt-4o-mini` (cheap, fast) over plain HTTP with
@@ -546,10 +554,210 @@ declarative.
 
 ---
 
-**Final Feynman test:** close this file and explain, out loud, what
-happens end-to-end when `GET /m/demo-shop-x1/users/42` arrives — from
-TCP hitting gunicorn to JSON leaving and a log row appearing. If you
-can narrate every hop (URLconf → `MockServerView.dispatch` → two DB
-lookups → sleep → dice roll → `JsonResponse` → `RequestLog`), you
-don't just know *what* this project does — you know *why* every file
-in it exists. That's the bar this course aims for.
+**Checkpoint — Feynman test:** close this file and explain, out loud,
+what happens end-to-end when `GET /m/demo-shop-x1/users/42` arrives —
+from TCP hitting gunicorn to JSON leaving and a log row appearing. If
+you can narrate every hop (URLconf → `MockServerView.dispatch` → two
+DB lookups → sleep → dice roll → `JsonResponse` → `RequestLog`), you
+understand everything up to this point. The remaining chapters cover
+how the project left the laptop: real deployment, and rebuilding the
+AI feature around a *small local model* instead of a paid API.
+
+---
+
+## Chapter 13 — Deployment: two containers and a traffic cop
+
+**Feynman moment:** in development you run two programs on two ports
+(Vite on 5173, Django on 8000) and the browser is told "the API lives
+somewhere else" — which is why CORS exists at all. In production we
+do something simpler and older: put *one* front door (nginx) in front
+of everything, so the browser only ever talks to one origin. No CORS,
+no `VITE_API_BASE`, no mixed-content headaches. nginx is the traffic
+cop standing at that door deciding, per URL, which room you go to.
+
+Three files (`Dockerfile.web`, `backend/Dockerfile`, `nginx.conf`)
+define the whole stack:
+
+**The web image** is a two-stage build: stage 1 (node) runs
+`npm run build` with `VITE_API_BASE=` **empty** — so the SPA makes
+same-origin requests like `/api/projects/` — and stage 2 (nginx)
+keeps only the built `dist/` plus the config. The node toolchain
+never ships to production; the final image is nginx + static files.
+
+**The routing rules in `nginx.conf`** mirror the app's URL design
+from Chapter 2 (this is where the `/api/`, `/m/`, `/admin/` prefixes
+pay off — one prefix per `location` block):
+
+- `/api/` → Django, with `proxy_buffering off` and a 600 s read
+  timeout. Both matter for streaming: buffering would hold SSE
+  frames hostage until the buffer fills, and the default 60 s
+  timeout would kill long log streams and slow AI generations.
+- `/m/` → Django. This is the URL users share with third parties.
+- everything else → `try_files $uri $uri/ /index.html` — the classic
+  SPA fallback: unknown paths return `index.html` so Vue Router can
+  handle `/projects/7` client-side after a hard refresh.
+
+One non-obvious line: `resolver 127.0.0.11` + a variable upstream
+(`set $mockbird_upstream …; proxy_pass $mockbird_upstream`). With a
+literal hostname nginx resolves it *once at startup* and dies if the
+API container isn't up yet; a variable forces per-request DNS
+resolution via Docker's internal resolver, so start order stops
+mattering.
+
+**The API image** runs migrations then gunicorn with
+`--worker-class gthread --workers 2 --threads 8`. Why threads and not
+just processes? Mockbird's workload is dominated by *waiting*:
+`time.sleep` for simulated latency, 2 s polls in SSE streams, minutes
+inside AI generation. Threads are cheap for waiting; 2×8 gives 16
+concurrent requests without 16 processes' worth of RAM. The
+`--timeout 300` matches the AI path's worst case — a worker mid-
+generation must not be shot by gunicorn's watchdog.
+
+**Feynman test:** why can the deployed frontend call `/api/…` with no
+CORS configuration at all, while dev needs `corsheaders`? (Answer:
+same origin — CORS is a *browser* rule about origins, and nginx makes
+the origins identical. Dev has two ports, hence two origins.)
+
+---
+
+## Chapter 14 — AI v3: swapping the oracle for a local model
+
+Chapter 10's design ("the model is an untrusted form-filler") gets
+stress-tested: replace `gpt-4o-mini` with **qwen3:1.7b on a local
+Ollama** — a model thousands of times smaller. Everything in this
+chapter follows from one fact: *small models are bad at big asks*.
+
+**The provider becomes a config knob.** Ollama speaks the
+OpenAI-compatible `/chat/completions` protocol, so `_call_model()`
+needs no provider branches — just `AI_BASE_URL` / `AI_MODEL` /
+`AI_API_KEY` settings (defaults: `localhost:11434/v1`, `qwen3:1.7b`).
+Point the base URL at `api.openai.com/v1` and it's OpenAI again.
+Lesson: when an ecosystem converges on a wire protocol, depend on the
+protocol, not the vendor.
+
+**One big prompt becomes two small ones.** Asking a 1.7B model for
+"complete coherent endpoint definitions" produced garbage. The fix in
+`ai.py` is a pipeline where the model only does what models are good
+at and *code does the rest*:
+
+1. **Plan** (`_plan_resources`): "extract 1–5 resources with example
+   fields and sensible actions" — a short, factual task. Output is
+   distrusted as ever: names slugified, placeholder echoes like
+   `plural_resource_name` dropped via `FORBIDDEN_NAMES`, up to 4
+   retries with slightly rising temperature (0.0 + 0.3·attempt —
+   deterministic first try, diversity only on retry).
+2. **Records** (`_gen_records`): per resource, "write 3–4 realistic
+   records with exactly these fields" — the creative part, run in a
+   `ThreadPoolExecutor` since calls are independent. If both attempts
+   fail, the plan's example record seeds state anyway: degraded, not
+   broken.
+3. **Assemble** (`_crud_endpoints`): the CRUD family — list GET,
+   detail GET, POST/PATCH/DELETE per the plan's `actions` — is built
+   *deterministically in code*. The model never writes a path or a
+   status code again.
+
+**Feynman moment:** v2 asked the intern to design the filing cabinet
+*and* fill it. v3 asks the intern only to name the folders and invent
+the paperwork — the cabinet is built by machine, identical every
+time. The smaller your intern, the more of the job you move into the
+machine.
+
+Around the pipeline sit deterministic repair passes, each one a
+patched-over observed failure of the small model: `_link_parents()`
+regex-detects "projects contain tasks" and injects the `project_id`
+the model forgot; `_ensure_ids()` fixes duplicate/missing ids that
+would break id-based CRUD; `_extract_json()` strips `<think>` blocks
+and code fences (qwen3 is a reasoning model — and the `/no_think`
+suffix in the user message stops it from spending its whole token
+budget thinking and returning empty content); `normalize_endpoints()`
+rewrites literal `/books/3` to `/books/{id}`, dedupes routes, forces
+whole families stateful, and synthesizes a missing list GET so state
+always seeds.
+
+**How do you know any of this works? You measure it.**
+`tools/ai_eval.py` is an eval harness — the LLM-era equivalent of a
+test suite, run against a live server because model output is
+nondeterministic. Ten cases from vague ("a todo app", "something for
+my gym") to detailed specs, each checked on three levels: structural
+(≥3 endpoints, no duplicate routes, stateful families exist),
+semantic (domain keywords appear in resources/paths — a gym API must
+mention members or workouts), and **behavioral**: it calls the live
+`/m/` mock — list must return seeded items, POST must appear in the
+next list, DELETE must remove. The prompts and repair passes above
+weren't designed up front; they were iterated until the eval passed.
+That workflow — change prompt, run eval, read failures — is the
+central skill of building on small models.
+
+---
+
+## Chapter 15 — Going async: the job that outlives the request
+
+A local model can take minutes. Chapter 10's synchronous
+request→response AI call breaks twice: proxies (Cloudflare, nginx
+defaults) cut connections around 100 s, and a browser spinner with no
+feedback for two minutes feels dead. The rebuilt flow in `views.py`
+is a homemade background-job system — worth studying because it shows
+what Celery/RQ would give you, built from parts you already have.
+
+**The shape:** `POST /generate/` validates, writes
+`{"percent": 1, "status": "running"}` into a new
+`Project.ai_progress` JSONField, spawns a **daemon thread**, and
+returns `202 Accepted` immediately. The client then polls
+`GET /generate/progress/` once a second; the same field later carries
+`"done"` or `"error"`, so the poll is also the delivery channel for
+the outcome. The gthread worker config from Chapter 13 is what makes
+"just a thread" viable.
+
+**Feynman moment:** ordering at a restaurant. Sync was standing at
+the counter staring at the cook. Async is: you get a buzzer (202),
+the kitchen writes its status on a board (`ai_progress`), and you
+glance at the board whenever you like. The buzzer never lies, because
+`_run_generation` catches *every* exception and writes an error state
+— the one unforgivable bug in a polling design is a client polling
+forever.
+
+Details that make it production-grade rather than a toy:
+
+- **Threads need DB hygiene:** `_generation_worker` wraps the run in
+  `close_old_connections()` — Django manages connections per thread,
+  and a thread that borrows one and exits leaks it.
+- **Fair use of one GPU:** `generation_slot()` caps *server-wide*
+  concurrent generations (default 3) using **Postgres advisory
+  locks** — `pg_try_advisory_lock(namespace, slot)` — because a
+  Python lock only covers one process and gunicorn runs several.
+  The database is the only thing all workers already share, so it
+  becomes the coordinator; no Redis needed. Non-blocking `try` means
+  a full house returns "capacity in use, try again" instantly rather
+  than queueing invisibly. Per-user fairness stays with the DRF
+  throttle (`6/min`); the advisory locks protect the *hardware*.
+- **Watching the model think:** every streamed token from
+  `_call_model` (it requests `stream: True` and reads the SSE deltas)
+  flows into `_GenerationLog`, which groups tokens into labeled
+  sections per model call, keeps the last 8000 chars, and — the
+  important bit — flushes to `ai_progress` at most ~2×/second, not
+  per token. UPDATE-per-token would hammer the DB for a display the
+  human reads at 2 Hz anyway. The modal (`AiGenerateModal.vue`)
+  renders it as a terminal-style `<pre>` pinned to the newest tokens.
+  Progress percent, meanwhile, comes from the *pipeline structure*:
+  plan = 5→30 %, records = 30→85 % (advancing per resource), assembly
+  = 90 %. Honest milestones, not a fake animated bar.
+- **Testing async without flakiness:** the `AI_RUN_SYNC` setting
+  makes tests run the worker inline. The seam between "how it runs"
+  and "what it does" (`_generation_worker` vs `_run_generation`) is
+  exactly what makes that a one-line switch.
+
+---
+
+**Final Feynman test:** explain the *other* end-to-end journey — a
+user types "restaurant reservations app" and clicks Generate. Narrate
+it: 202 + progress row → daemon thread → advisory-lock slot → plan
+call to Ollama (tokens streaming into the throttled log) → parallel
+record calls → deterministic CRUD assembly and repair passes →
+`create_endpoints` + `seed_resource` → `"done"` picked up by the
+poll → and now `GET /m/<slug>/reservations` serves seeded state
+through the Chapter 5/11 machinery, via the nginx `/m/` block from
+Chapter 13. If you can also say *why* each piece exists — why 202,
+why advisory locks, why two prompts instead of one, why the eval
+harness is the real spec — you can rebuild this project, and more
+importantly you could re-derive it under different constraints.
+That's expert.

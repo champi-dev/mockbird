@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
+  --zoom: 1;
   --bg: #f6f7fb;
   --surface: #ffffff;
   --border: #e5e8f0;
@@ -226,6 +227,7 @@ h3 {
 .row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.75rem;
 }
 
@@ -233,6 +235,7 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 1rem;
 }
 
@@ -244,4 +247,67 @@ h3 {
 .error-text {
   color: var(--danger);
   font-size: 0.85rem;
+}
+
+/* ---------- responsive foundation ---------- */
+code,
+pre {
+  overflow-wrap: anywhere;
+}
+
+pre {
+  max-width: 100%;
+}
+
+/* Every overlay dialog stays usable on short/small screens.
+   vh does not shrink under CSS zoom, hence the --zoom division. */
+.modal {
+  max-height: calc(90vh / var(--zoom));
+  overflow-y: auto;
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 1.25rem 0.9rem;
+  }
+
+  .card {
+    padding: 1.1rem;
+  }
+
+  .btn {
+    padding: 0.55rem 0.9rem;
+  }
+}
+
+/* Large displays: scale the whole UI up instead of stranding a
+   narrow column of tiny text in the middle of a 4K monitor */
+@media (min-width: 1800px) {
+  :root {
+    --zoom: 1.25;
+  }
+
+  html {
+    zoom: 1.25;
+  }
+}
+
+@media (min-width: 2400px) {
+  :root {
+    --zoom: 1.6;
+  }
+
+  html {
+    zoom: 1.6;
+  }
+}
+
+@media (min-width: 3200px) {
+  :root {
+    --zoom: 2.1;
+  }
+
+  html {
+    zoom: 2.1;
+  }
 }
