@@ -1,3 +1,8 @@
+"""Mock-server tests: the nine behaviors that define /m/<slug>/...
+— configured JSON/status/headers, 404s (path, project, method),
+logging of matched AND unmatched hits, delay, forced errors, and
+root-path endpoints.
+"""
 import json
 from unittest.mock import patch
 
@@ -57,11 +62,17 @@ class MockServerTests(TestCase):
     def test_delay_is_applied(self):
         self.endpoint.delay_ms = 250
         self.endpoint.save()
+        # patch() swaps time.sleep for a recording fake INSIDE the
+        # with-block: the test proves sleep(0.25) was requested
+        # without actually waiting 250ms. Note the patch target is
+        # where it's USED (mocks.mock_server.time.sleep), not where
+        # it's defined (time.sleep) — the golden rule of patching.
         with patch("mocks.mock_server.time.sleep") as sleep:
             self.client.get(self.url("/users/42"))
         sleep.assert_called_once_with(0.25)
 
     def test_error_rate_forces_error_status(self):
+        # rate=100 makes the dice roll deterministic — always fail.
         self.endpoint.error_rate = 100
         self.endpoint.error_status = 503
         self.endpoint.save()
@@ -77,3 +88,38 @@ class MockServerTests(TestCase):
         )
         r = self.client.get(self.url("/"))
         self.assertEqual(json.loads(r.content), {"ok": True})
+
+
+class MockCorsTests(TestCase):
+    """Mock endpoints must be consumable cross-origin from any app."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from mocks.models import Endpoint, Project
+        user = User.objects.create_user('corsu', password='x')
+        self.project = Project.objects.create(owner=user, name='cors')
+        Endpoint.objects.create(
+            project=self.project, method='GET', path='/things',
+            response_body=[{'id': 1}], status_code=200,
+        )
+        self.base = f'/m/{self.project.slug}'
+
+    def test_any_origin_allowed_on_mock_response(self):
+        r = self.client.get(f'{self.base}/things', HTTP_ORIGIN='https://elsewhere.app')
+        self.assertEqual(r['Access-Control-Allow-Origin'], '*')
+
+    def test_preflight_succeeds_for_any_method_and_headers(self):
+        r = self.client.options(
+            f'{self.base}/things',
+            HTTP_ORIGIN='https://elsewhere.app',
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD='DELETE',
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS='x-custom, content-type',
+        )
+        self.assertEqual(r.status_code, 204)
+        self.assertEqual(r['Access-Control-Allow-Origin'], '*')
+        self.assertIn('DELETE', r['Access-Control-Allow-Methods'])
+        self.assertIn('x-custom', r['Access-Control-Allow-Headers'])
+
+    def test_dashboard_api_stays_restricted(self):
+        r = self.client.get('/api/projects/', HTTP_ORIGIN='https://elsewhere.app')
+        self.assertNotIn('Access-Control-Allow-Origin', r)
