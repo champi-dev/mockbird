@@ -1,5 +1,6 @@
 <script setup>
 import NavBar from './components/NavBar.vue'
+import InstallButton from './components/InstallButton.vue'
 import { useAuthStore } from './stores/auth'
 
 const auth = useAuthStore()
@@ -12,4 +13,8 @@ const auth = useAuthStore()
       <component :is="Component" />
     </transition>
   </router-view>
+
+  <!-- Global PWA install button — self-hides when not installable / already
+       installed, so it's safe to always render (login pages included). -->
+  <InstallButton />
 </template>

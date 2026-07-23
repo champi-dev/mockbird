@@ -3,8 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- PWA: makes the app installable and gives it native chrome. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#4f46e5" />
+    <meta name="description" content="Define fake API endpoints in a dashboard and get a live, shareable URL with latency and error simulation." />
+    <!-- iOS standalone support (Safari ignores the manifest for these). -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Mockbird" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <title>Mockbird — Mock API Studio</title>
   </head>
   <body>
     <div id="app"></div>
